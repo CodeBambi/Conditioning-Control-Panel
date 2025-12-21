@@ -1,0 +1,10 @@
+customtkinter
+Pillow
+pygame
+imageio
+imageio-ffmpeg
+opencv-python
+pystray
+comtypes
+pycaw
+screeninfo
