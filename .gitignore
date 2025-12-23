@@ -1,0 +1,13 @@
+.idea/
+BambiBrowserData/
+settings.json
+playback_cache.wav
+__pycache__/
+*.spec
+build/
+dist/
+assets/startle_videos/*
+assets/images/*
+assets/backgrounds/*
+assets/Sub_audio/*
+!assets/images/Conditioning Control Panel.png  # (Optional: Keep specific important files like a logo)
