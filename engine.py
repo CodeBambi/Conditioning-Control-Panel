@@ -379,10 +379,11 @@ class FlasherEngine:
     def _duck_subliminal_channel(self, should_duck):
         try:
             sub_vol = self.settings.get('sub_audio_volume', 0.5)
+            curved_vol = max(0.05, sub_vol ** 1.5)  # Gentler curve, minimum 5%
             if should_duck:
-                pygame.mixer.Channel(2).set_volume(sub_vol * 0.2)
+                pygame.mixer.Channel(2).set_volume(curved_vol * 0.3)  # 30% during duck
             else:
-                pygame.mixer.Channel(2).set_volume(sub_vol)
+                pygame.mixer.Channel(2).set_volume(curved_vol)
         except:
             pass
 
@@ -397,7 +398,7 @@ class FlasherEngine:
         if event_type == "startle":
             if self.video_running: self.events_pending_reschedule.add(event_type); return
             self.busy = True
-            
+
             # Signal to progression system that video is coming - this will:
             # - Pop all bubbles (with sounds)
             # - Hide/stop spiral
@@ -406,13 +407,13 @@ class FlasherEngine:
                 self.progression.prepare_for_video()
             except:
                 pass
-            
+
             # Stop any currently playing flash sounds
             try:
                 pygame.mixer.stop()
             except:
                 pass
-            
+
             # Clear any active flash windows immediately
             for win in self.active_windows[:]:
                 try:
@@ -421,7 +422,7 @@ class FlasherEngine:
                     pass
             self.active_windows.clear()
             self.active_rects.clear()
-            
+
             # Reset resource manager flash count
             try:
                 from progression_system import resource_mgr
@@ -429,13 +430,13 @@ class FlasherEngine:
                 resource_mgr.active_effects['bubbles'] = 0
             except:
                 pass
-            
+
             # Wait 4 seconds to let resources free up
             video_path = self.get_next_media('startle', self.paths['startle_videos'])
             if not video_path: self.busy = False; return
             is_strict = self.settings.get('startle_strict', False) or strict_override
             self.penalty_loop_count = 0
-            
+
             # Schedule the actual video prep after delay
             self.root.after(4000, lambda: self._delayed_startle_prep(video_path, is_strict))
             return
@@ -447,7 +448,7 @@ class FlasherEngine:
 
         if event_type == "flash":
             self._flash_images()
-    
+
     def _delayed_startle_prep(self, video_path, is_strict):
         """Called after 4 second delay to start video"""
         if not self.running:
@@ -462,7 +463,7 @@ class FlasherEngine:
             if resource_mgr.is_video_active():
                 self.busy = False
                 return
-            
+
             if not resource_mgr.request_flash():
                 # Bubbles active, retry in 500ms
                 self.busy = False
@@ -470,17 +471,17 @@ class FlasherEngine:
                 return
         except:
             pass
-        
+
         media_pool = self.get_files(self.paths['images'])
         sound_pool = self.get_files(self.paths['sounds'])
         if not media_pool: self.busy = False; return
         sound_path = random.choice(sound_pool) if sound_pool else None
         monitors = self._get_monitors_safe()
-        
+
         # Use single sim_images value with small variance
         base_images = max(1, self.settings.get('sim_images', 5))
         max_allowed = min(self.settings.get('flash_hydra_limit', 20), 20)  # Hard cap at 20
-        
+
         # Reduce image count when spiral is active to prevent overload
         try:
             from progression_system import resource_mgr
@@ -489,7 +490,7 @@ class FlasherEngine:
                 max_allowed = min(max_allowed, 8)
         except:
             pass
-        
+
         # Clamp base_images to max allowed
         base_images = min(base_images, max_allowed)
         num_images = max(1, base_images + random.randint(-1, 1))  # ±1 variance
@@ -548,8 +549,9 @@ class FlasherEngine:
             try:
                 snd = pygame.mixer.Sound(linked_audio_path)
                 vol = self.settings.get('sub_audio_volume', 0.5)
+                curved_vol = max(0.05, vol ** 1.5)  # Gentler curve, minimum 5%
                 chan = pygame.mixer.Channel(2)
-                chan.set_volume(vol)
+                chan.set_volume(curved_vol)
                 chan.play(snd)
                 length = snd.get_length()
                 self._add_xp(1)
@@ -683,13 +685,13 @@ class FlasherEngine:
             self.strict_active = False
 
         self.video_running = True
-        
+
         # Notify progression system that video started
         try:
             self.progression.video_started()
         except:
             pass
-        
+
         self._do_duck()
         self._duck_subliminal_channel(True)
         self.attention_spawns = []
@@ -704,7 +706,7 @@ class FlasherEngine:
                 self.vid_sound = pygame.mixer.Sound(audio_path)
                 self.vid_channel = pygame.mixer.Channel(1)
                 vol = self.settings.get('volume', 1.0)
-                curved_vol = vol ** 2
+                curved_vol = max(0.05, vol ** 1.5)  # Gentler curve, minimum 5%
                 self.vid_channel.set_volume(curved_vol)
                 self.vid_channel.play(self.vid_sound)
             except:
@@ -853,13 +855,13 @@ class FlasherEngine:
     def _cleanup_video(self):
         self.video_running = False
         self.busy = False
-        
+
         # Notify progression system that video ended
         try:
             self.progression.video_ended()
         except:
             pass
-        
+
         if hasattr(self, 'cap') and self.cap: self.cap.release()
         for vw in self.video_windows:
             try:
@@ -995,7 +997,7 @@ class FlasherEngine:
             self.active_windows.remove(win)
             self.active_rects = [r for r in self.active_rects if r['win'] != win]
         win.destroy()
-        
+
         # Only spawn more if corruption mode is enabled AND not in cleanup phase
         if self.settings.get('flash_corruption', False) and not getattr(self, '_cleanup_in_progress', False):
             max_hydra = self.settings.get('flash_hydra_limit', 30)
@@ -1009,17 +1011,17 @@ class FlasherEngine:
         if not self.running: return
         media_pool = self.get_files(self.paths['images'])
         if not media_pool: return
-        
+
         # Cap max_hydra to 20 to prevent excessive images
         max_hydra = min(max_hydra, 20)
-        
+
         # Calculate how many we can actually spawn (max 2, but respect limit)
         space_available = max_hydra - current_count
         num_to_spawn = min(2, space_available)
-        
+
         if num_to_spawn <= 0:
             return
-        
+
         selected = [random.choice(media_pool) for _ in range(num_to_spawn)]
         monitors = self._get_monitors_safe()
         scale = self.settings.get('image_scale', 1.0)
@@ -1093,11 +1095,11 @@ class FlasherEngine:
             if not data['is_multiplication']: self.busy = False
             return
         duration = 5.0
-        
+
         # Always duck audio when showing flash images
         self._do_duck()
         self._duck_subliminal_channel(True)
-        
+
         if data['sound_path']:
             try:
                 if data.get('processed_data') and data['processed_data'][0]['is_startle']:
@@ -1105,24 +1107,24 @@ class FlasherEngine:
                 else:
                     effect = pygame.mixer.Sound(data['sound_path'])
                     vol = self.settings.get('volume', 1.0)
-                    curved_vol = vol ** 2
+                    curved_vol = max(0.05, vol ** 1.5)  # Gentler curve, minimum 5%
                     effect.set_volume(curved_vol)
                     duration = effect.get_length()
                     effect.play()
                     self._add_xp(2)
             except Exception:
                 pass
-        
+
         # Schedule unduck after duration (sound length or default 5s)
         unduck_delay = int(duration * 1000) + 1500
         self.root.after(unduck_delay, self.ducker.unduck)
         self.root.after(unduck_delay - 1000, lambda: self._duck_subliminal_channel(False))
-        
+
         # Force cleanup all flash windows 1 second after audio ends
         # This prevents hydra mode from spawning forever
         cleanup_delay = int(duration * 1000) + 1000
         self.root.after(cleanup_delay, self._force_flash_cleanup)
-        
+
         self.virtual_end_time = time.time() + duration
         if not data['processed_data']:
             if not data['is_multiplication']: self.busy = False
@@ -1143,7 +1145,7 @@ class FlasherEngine:
 
             self.root.after(delay_ms, spawn_later)
         if not data['is_multiplication']: self.busy = False
-    
+
     def _force_flash_cleanup(self):
         """Force cleanup all flash windows after audio ends"""
         if not self.running:
@@ -1152,10 +1154,11 @@ class FlasherEngine:
         self.virtual_end_time = time.time()
         # Disable hydra spawning temporarily by marking cleanup in progress
         self._cleanup_in_progress = True
-        
+
         # Schedule re-enabling after windows fade out
         def re_enable():
             self._cleanup_in_progress = False
+
         self.root.after(2000, re_enable)
 
     def _delayed_audio_start(self, sound_path):
@@ -1164,7 +1167,7 @@ class FlasherEngine:
             try:
                 effect = pygame.mixer.Sound(sound_path)
                 vol = self.settings.get('volume', 1.0)
-                curved_vol = vol ** 2
+                curved_vol = max(0.05, vol ** 1.5)  # Gentler curve, minimum 5%
                 effect.set_volume(curved_vol)
                 effect.play()
                 duration = effect.get_length()
@@ -1224,7 +1227,7 @@ class FlasherEngine:
         if leveled_up:
             self.progression.check_unlocks(current_level)
             self._play_levelup_sound()
-    
+
     def _play_levelup_sound(self):
         """Play level up celebration sound"""
         try:

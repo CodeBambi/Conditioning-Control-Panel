@@ -173,7 +173,7 @@ Full-screen videos that demand your attention.
 | Setting | Range | Description |
 |---------|-------|-------------|
 | **Enable** | On/Off | Toggle mandatory videos |
-| **Per Hour** | 1-30 | Videos per hour |
+| **Per Hour** | 1-20 | Videos per hour |
 | **⚠️ Strict Lock** | On/Off | CANNOT close until video ends |
 | **Mini-Game** | On/Off | Attention targets during video |
 | **Target Density** | 1-10 | How many targets appear |

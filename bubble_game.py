@@ -409,7 +409,7 @@ class Bubble:
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             sounds_dir = os.path.join(script_dir, "assets", "sounds")
-            vol = min(1.0, max(0.0, self.volume)) ** 2
+            vol = max(0.05, min(1.0, max(0.0, self.volume)) ** 1.5)  # Gentler curve, minimum 5%
 
             pop_files = ["Pop.mp3", "Pop2.mp3", "Pop3.mp3"]
             chosen_pop = random.choice(pop_files)
@@ -460,18 +460,18 @@ class Bubble:
             return
         self.alive = False
         Bubble.count = max(0, Bubble.count - 1)
-        
+
         # Remove from instances list
         if self in Bubble.instances:
             Bubble.instances.remove(self)
-        
+
         # Unregister from resource manager
         if RESOURCE_MGR_AVAILABLE:
             try:
                 resource_mgr.register_effect('bubble', False)
             except:
                 pass
-        
+
         # Destroy hitbox window
         if self.hitbox_win:
             try:
@@ -479,7 +479,7 @@ class Bubble:
             except:
                 pass
             self.hitbox_win = None
-        
+
         # Destroy visual window
         if self.win:
             try:
@@ -513,11 +513,11 @@ class Bubble:
                         bubble.win.destroy()
                 except:
                     pass
-        
+
         # Clear tracking
         cls.instances.clear()
         cls.count = 0
-        
+
         # Reset resource manager
         if RESOURCE_MGR_AVAILABLE:
             try:
