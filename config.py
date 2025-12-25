@@ -1,18 +1,36 @@
+"""
+Configuration Module for Conditioning Control Panel
+====================================================
+Provides:
+- Path definitions
+- Theme settings
+- Default configuration values
+- XP calculation
+"""
+
 import os
 import sys
 
-# --- PATHS ---
-if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# =============================================================================
+# PATH CONFIGURATION
+# =============================================================================
 
+def get_base_dir() -> str:
+    """Get the base directory of the application."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = get_base_dir()
+
+# Asset directories
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 IMG_DIR = os.path.join(ASSETS_DIR, "images")
 SND_DIR = os.path.join(ASSETS_DIR, "sounds")
 SUB_AUDIO_DIR = os.path.join(ASSETS_DIR, "sub_audio")
 STARTLE_VID_DIR = os.path.join(ASSETS_DIR, "startle_videos")
 
+# Config files
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 PRESETS_FILE = os.path.join(BASE_DIR, "presets.json")
 TEMP_AUDIO_FILE = os.path.join(ASSETS_DIR, "temp_spot_audio.wav")
@@ -21,11 +39,16 @@ TEMP_AUDIO_FILE = os.path.join(ASSETS_DIR, "temp_spot_audio.wav")
 BROWSER_PROFILE_DIR = os.path.join(BASE_DIR, "BambiBrowserData")
 BAMBI_URL = "https://bambicloud.com/"
 
-STARTUP_FOLDER = os.path.join(os.getenv('APPDATA'), r'Microsoft\Windows\Start Menu\Programs\Startup')
+# Windows startup folder (optional feature)
+STARTUP_FOLDER = os.path.join(os.getenv('APPDATA', ''), r'Microsoft\Windows\Start Menu\Programs\Startup')
 STARTUP_FILE_NAME = "ConditioningApp_AutoRun.bat"
 STARTUP_FILE_PATH = os.path.join(STARTUP_FOLDER, STARTUP_FILE_NAME)
 
-# --- THEME ---
+
+# =============================================================================
+# THEME CONFIGURATION
+# =============================================================================
+
 THEME = {
     "bg": "#FF69B4",
     "header_bg": "#C51162",
@@ -46,7 +69,11 @@ THEME = {
     "xp_bg": "#880E4F"
 }
 
-# --- TEXT POOL ---
+
+# =============================================================================
+# SUBLIMINAL TEXT POOL
+# =============================================================================
+
 BAMBI_TEXT_LIST = [
     "BAMBI FREEZE", "BAMBI RESET", "BAMBI SLEEP", "BAMBI UNIFORM LOCK",
     "BIMBO DOLL", "COCK ZOMBIE NOW", "DROP FOR COCK", "GIGGLETIME",
@@ -54,53 +81,81 @@ BAMBI_TEXT_LIST = [
 ]
 BAMBI_POOL_DICT = {text: True for text in BAMBI_TEXT_LIST}
 
-# --- XP SYSTEM ---
-# New formula: XP needed = 50 + (level * 20)
-# Total XP for levels 1-20: ~4,700 XP
-# At low settings (~10 XP/min): ~8 hours to level 20
-# At medium settings (~20 XP/min): ~4 hours to level 20
-def xp_for_level(level):
-    """Calculate XP needed for the next level"""
+
+# =============================================================================
+# XP SYSTEM
+# =============================================================================
+
+def xp_for_level(level: int) -> int:
+    """
+    Calculate XP needed for the next level.
+    
+    Formula: 50 + (level * 20)
+    
+    Args:
+        level: Current level
+    
+    Returns:
+        XP required to reach next level
+    
+    Examples:
+        Level 1→2: 70 XP
+        Level 10→11: 250 XP
+        Level 20→21: 450 XP
+    
+    Total XP for levels 1-20: ~4,700 XP
+    At low settings (~10 XP/min): ~8 hours to level 20
+    At medium settings (~20 XP/min): ~4 hours to level 20
+    """
+    if not isinstance(level, int) or level < 1:
+        level = 1
     return 50 + (level * 20)
 
-# --- DEFAULT SETTINGS ---
+
+# =============================================================================
+# DEFAULT SETTINGS
+# =============================================================================
+
 DEFAULT_SETTINGS = {
+    # --- Player Progress ---
     "player_level": 1,
     "player_xp": 0.0,
-    "welcomed": False,  # Track if user has seen welcome message
+    "welcomed": False,
     
-    # Flash settings - streamlined with frequency slider
+    # --- Flash Images ---
     "flash_enabled": True,
-    "flash_freq": 2,  # Flashes per minute (1-10)
+    "flash_freq": 2,           # Flashes per minute (1-10)
     "flash_clickable": True,
-    "flash_corruption": False,  # Hydra effect - clicking spawns 2 more
-    "flash_hydra_limit": 20,  # Max images on screen (capped at 20)
-    "sim_images": 5,  # Number of images per flash (1-10)
-    "image_scale": 0.9,
-    "image_alpha": 1.0,
-    "fade_duration": 0.4,
+    "flash_corruption": False,  # Hydra effect
+    "flash_hydra_limit": 20,    # Max images on screen (hard cap: 20)
+    "sim_images": 5,            # Images per flash (1-20)
+    "image_scale": 0.9,         # 50-250%
+    "image_alpha": 1.0,         # 10-100%
+    "fade_duration": 0.4,       # 0-2 seconds
     
-    # Startle/Video settings
+    # --- Mandatory Videos ---
     "startle_enabled": True,
-    "startle_freq": 6,
-    "startle_strict": False,
+    "startle_freq": 6,          # Videos per hour (1-20)
+    "startle_strict": False,    # DANGEROUS: Cannot close video
     "force_startle_on_launch": False,
     
-    # Audio - reduced by 20%
-    "volume": 0.32,  # Was 0.4, now 20% lower
+    # --- Audio ---
+    "volume": 0.32,             # Master volume (0-100%)
+    "audio_ducking_enabled": True,
+    "audio_ducking_strength": 100,
     
-    # System
+    # --- System ---
     "dual_monitor": True,
     "run_on_startup": False,
     "start_minimized": False,
     "auto_start_engine": False,
     "last_preset": "DEFAULT",
-    "disable_panic_esc": False,
+    "disable_panic_esc": False,  # DANGEROUS: Disables ESC panic key
     
-    # Subliminals - max 30/min
+    # --- Subliminals ---
     "subliminal_enabled": False,
-    "subliminal_freq": 5,  # Max slider will be 30
-    "subliminal_duration": 2,
+    "subliminal_freq": 5,       # Messages per minute (1-30)
+    "subliminal_duration": 2,   # Frames (1-10)
     "subliminal_opacity": 0.8,
     "subliminal_pool": BAMBI_POOL_DICT.copy(),
     "sub_bg_color": "#000000",
@@ -111,20 +166,18 @@ DEFAULT_SETTINGS = {
     "sub_audio_enabled": False,
     "sub_audio_volume": 0.5,
     
-    # Background audio
+    # --- Background Audio ---
     "bg_audio_enabled": True,
     "bg_audio_max": 15,
-    "audio_ducking_enabled": True,
-    "audio_ducking_strength": 100,
     
-    # Attention mini-game - max 20 targets
+    # --- Attention Mini-game ---
     "attention_enabled": False,
-    "attention_density": 3,  # Max slider will be 20
+    "attention_density": 3,     # Target count (1-10)
     "attention_lifespan": 5,
     "attention_size": 70,
     "attention_pool": BAMBI_POOL_DICT.copy(),
     
-    # Scheduler/Ramping
+    # --- Scheduler ---
     "scheduler_enabled": False,
     "scheduler_duration_min": 60,
     "scheduler_multiplier": 1.0,
@@ -134,19 +187,71 @@ DEFAULT_SETTINGS = {
     "time_end_str": "18:00",
     "active_weekdays": [0, 1, 2, 3, 4, 5, 6],
     
-    # Spiral overlay
+    # --- Spiral Overlay (Unlocks Lv.10) ---
     "spiral_enabled": False,
     "spiral_path": "",
     "spiral_opacity": 0.10,
     "spiral_link_ramp": False,
 
-    # Bubbles
+    # --- Bubbles (Unlocks Lv.20) ---
     "bubbles_enabled": False,
     "bubbles_freq": 5,
     "bubbles_link_ramp": False,
 
-    # Pink filter
+    # --- Pink Filter (Unlocks Lv.10) ---
     "pink_filter_enabled": False,
     "pink_filter_opacity": 0.10,
     "pink_filter_link_ramp": False,
 }
+
+
+# =============================================================================
+# SAFETY LIMITS
+# =============================================================================
+
+# Hard limits that cannot be exceeded
+LIMITS = {
+    "max_images_on_screen": 20,
+    "max_videos_per_hour": 20,
+    "max_bubbles": 8,
+    "max_flashes_per_min": 10,
+    "max_subliminals_per_min": 30,
+    "max_attention_targets": 10,
+}
+
+
+def validate_limits(settings: dict) -> dict:
+    """
+    Ensure settings don't exceed safety limits.
+    
+    Args:
+        settings: Settings dictionary to validate
+    
+    Returns:
+        Settings with values clamped to limits
+    """
+    if not isinstance(settings, dict):
+        return DEFAULT_SETTINGS.copy()
+    
+    validated = settings.copy()
+    
+    # Clamp values to limits
+    if validated.get('flash_hydra_limit', 0) > LIMITS['max_images_on_screen']:
+        validated['flash_hydra_limit'] = LIMITS['max_images_on_screen']
+    
+    if validated.get('sim_images', 0) > LIMITS['max_images_on_screen']:
+        validated['sim_images'] = LIMITS['max_images_on_screen']
+    
+    if validated.get('startle_freq', 0) > LIMITS['max_videos_per_hour']:
+        validated['startle_freq'] = LIMITS['max_videos_per_hour']
+    
+    if validated.get('flash_freq', 0) > LIMITS['max_flashes_per_min']:
+        validated['flash_freq'] = LIMITS['max_flashes_per_min']
+    
+    if validated.get('subliminal_freq', 0) > LIMITS['max_subliminals_per_min']:
+        validated['subliminal_freq'] = LIMITS['max_subliminals_per_min']
+    
+    if validated.get('attention_density', 0) > LIMITS['max_attention_targets']:
+        validated['attention_density'] = LIMITS['max_attention_targets']
+    
+    return validated

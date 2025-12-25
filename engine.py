@@ -1,3 +1,14 @@
+"""
+Flash Engine Module for Conditioning Control Panel
+===================================================
+Core engine that handles:
+- Flash images display
+- Video playback
+- Subliminal messages
+- Audio control
+- Event scheduling
+"""
+
 import os
 import time
 import random
@@ -8,6 +19,8 @@ import datetime
 import math
 import tkinter as tk
 from tkinter import messagebox
+from typing import Optional, Dict, List, Any, Callable
+
 from PIL import Image, ImageTk
 import cv2
 import pygame
@@ -15,19 +28,28 @@ import imageio.v3 as iio
 import imageio_ffmpeg
 from ctypes import windll
 
+# Initialize logging
+try:
+    from security import logger, sanitize_path, validate_file_extension
+except ImportError:
+    import logging
+    logger = logging.getLogger("ConditioningPanel")
+    def sanitize_path(p, d=""): return p
+    def validate_file_extension(p, c): return True
+
 try:
     from screeninfo import get_monitors
-
     SCREENINFO_AVAILABLE = True
 except ImportError:
     SCREENINFO_AVAILABLE = False
+    logger.info("screeninfo not available - multi-monitor support disabled")
 
 # Import from our modules
 from config import (
     ASSETS_DIR, IMG_DIR, SND_DIR, SUB_AUDIO_DIR, STARTLE_VID_DIR,
-    TEMP_AUDIO_FILE, DEFAULT_SETTINGS
+    TEMP_AUDIO_FILE, DEFAULT_SETTINGS, LIMITS, validate_limits
 )
-from utils import SystemAudioDucker
+from utils import AudioDucker, safe_load_json, safe_save_json
 from browser import BrowserManager
 from ui_components import TransparentTextWindow
 from progression_system import ProgressionSystem
@@ -51,7 +73,7 @@ class FlasherEngine:
         self.events_pending_reschedule = set()
 
         # Sub-systems
-        self.ducker = SystemAudioDucker()
+        self.ducker = AudioDucker()
         self.browser = BrowserManager()
         self.progression = ProgressionSystem(self)
 
@@ -89,8 +111,9 @@ class FlasherEngine:
         try:
             pygame.mixer.init(frequency=44100, size=-16, channels=8, buffer=4096)
             pygame.display.init()
-        except:
-            pass
+            logger.info("Pygame audio initialized")
+        except pygame.error as e:
+            logger.error(f"Failed to initialize pygame audio: {e}")
 
         self.load_gj_sound()
 
@@ -161,15 +184,16 @@ class FlasherEngine:
         if found:
             try:
                 self.gj_sound = pygame.mixer.Sound(found[0])
-            except:
-                pass
+                logger.debug(f"Loaded GJ sound: {found[0]}")
+            except pygame.error as e:
+                logger.warning(f"Could not load GJ sound: {e}")
 
     def play_gj(self):
         if self.gj_sound:
             try:
                 self.gj_sound.play()
-            except:
-                pass
+            except pygame.error as e:
+                logger.debug(f"Could not play GJ sound: {e}")
 
     def update_settings(self, new_settings):
         needs_reschedule = False
@@ -278,30 +302,32 @@ class FlasherEngine:
         self.video_running = False
         try:
             pygame.mixer.stop()
-        except:
-            pass
+        except pygame.error as e:
+            logger.debug(f"Could not stop pygame mixer: {e}")
         self.ducker.unduck()
 
         # Pop all active bubbles (plays sounds)
         try:
             from bubble_game import Bubble
             Bubble.pop_all()
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except Exception as e:
+            logger.debug(f"Could not pop bubbles: {e}")
 
         for win in self.active_windows:
             try:
                 win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window already destroyed
         self.active_windows.clear()
         self.active_rects.clear()
 
         for t in self.active_floating_texts:
             try:
                 t.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window already destroyed
         self.active_floating_texts.clear()
 
         # Shutdown progression visuals
@@ -313,17 +339,19 @@ class FlasherEngine:
             resource_mgr.active_effects['flashes'] = 0
             resource_mgr.active_effects['bubbles'] = 0
             resource_mgr.flash_waiting = False
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except (KeyError, AttributeError) as e:
+            logger.debug(f"Could not reset resource manager: {e}")
 
         if hasattr(self, 'cap') and self.cap: self.cap.release()
         self.events_pending_reschedule.clear()
         self.strict_active = False
         try:
-            self.root.deiconify();
+            self.root.deiconify()
             self.root.lift()
-        except:
-            pass
+        except tk.TclError as e:
+            logger.debug(f"Could not restore window: {e}")
 
     def schedule_next(self, event_type):
         if not self.running: return
@@ -367,8 +395,10 @@ class FlasherEngine:
                    TEMP_AUDIO_FILE]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.exists(TEMP_AUDIO_FILE): return TEMP_AUDIO_FILE
-        except:
-            pass
+        except FileNotFoundError as e:
+            logger.warning(f"FFmpeg not found: {e}")
+        except subprocess.SubprocessError as e:
+            logger.warning(f"Audio extraction failed: {e}")
         return None
 
     def _do_duck(self):
@@ -384,8 +414,8 @@ class FlasherEngine:
                 pygame.mixer.Channel(2).set_volume(curved_vol * 0.3)  # 30% during duck
             else:
                 pygame.mixer.Channel(2).set_volume(curved_vol)
-        except:
-            pass
+        except pygame.error as e:
+            logger.debug(f"Could not adjust subliminal channel: {e}")
 
     def trigger_event(self, event_type, strict_override=False):
         if not self.running: return
@@ -398,45 +428,49 @@ class FlasherEngine:
         if event_type == "startle":
             if self.video_running: self.events_pending_reschedule.add(event_type); return
             self.busy = True
-
+            
             # Signal to progression system that video is coming - this will:
             # - Pop all bubbles (with sounds)
             # - Hide/stop spiral
             # - Hide pink filter
             try:
                 self.progression.prepare_for_video()
-            except:
-                pass
-
+            except AttributeError:
+                pass  # Progression not initialized
+            except Exception as e:
+                logger.debug(f"Could not prepare for video: {e}")
+            
             # Stop any currently playing flash sounds
             try:
                 pygame.mixer.stop()
-            except:
-                pass
-
+            except pygame.error as e:
+                logger.debug(f"Could not stop mixer: {e}")
+            
             # Clear any active flash windows immediately
             for win in self.active_windows[:]:
                 try:
                     win.destroy()
-                except:
-                    pass
+                except tk.TclError:
+                    pass  # Already destroyed
             self.active_windows.clear()
             self.active_rects.clear()
-
+            
             # Reset resource manager flash count
             try:
                 from progression_system import resource_mgr
                 resource_mgr.active_effects['flashes'] = 0
                 resource_mgr.active_effects['bubbles'] = 0
-            except:
-                pass
-
+            except ImportError:
+                pass  # Module not available
+            except (KeyError, AttributeError) as e:
+                logger.debug(f"Could not reset resource manager: {e}")
+            
             # Wait 4 seconds to let resources free up
             video_path = self.get_next_media('startle', self.paths['startle_videos'])
             if not video_path: self.busy = False; return
             is_strict = self.settings.get('startle_strict', False) or strict_override
             self.penalty_loop_count = 0
-
+            
             # Schedule the actual video prep after delay
             self.root.after(4000, lambda: self._delayed_startle_prep(video_path, is_strict))
             return
@@ -448,7 +482,7 @@ class FlasherEngine:
 
         if event_type == "flash":
             self._flash_images()
-
+    
     def _delayed_startle_prep(self, video_path, is_strict):
         """Called after 4 second delay to start video"""
         if not self.running:
@@ -463,25 +497,27 @@ class FlasherEngine:
             if resource_mgr.is_video_active():
                 self.busy = False
                 return
-
+            
             if not resource_mgr.request_flash():
                 # Bubbles active, retry in 500ms
                 self.busy = False
                 self.root.after(500, self._retry_flash)
                 return
-        except:
-            pass
-
+        except ImportError:
+            pass  # Module not available
+        except Exception as e:
+            logger.debug(f"Resource manager check failed: {e}")
+        
         media_pool = self.get_files(self.paths['images'])
         sound_pool = self.get_files(self.paths['sounds'])
         if not media_pool: self.busy = False; return
         sound_path = random.choice(sound_pool) if sound_pool else None
         monitors = self._get_monitors_safe()
-
+        
         # Use single sim_images value with small variance
         base_images = max(1, self.settings.get('sim_images', 5))
         max_allowed = min(self.settings.get('flash_hydra_limit', 20), 20)  # Hard cap at 20
-
+        
         # Reduce image count when spiral is active to prevent overload
         try:
             from progression_system import resource_mgr
@@ -490,7 +526,7 @@ class FlasherEngine:
                 max_allowed = min(max_allowed, 8)
         except:
             pass
-
+        
         # Clamp base_images to max allowed
         base_images = min(base_images, max_allowed)
         num_images = max(1, base_images + random.randint(-1, 1))  # ±1 variance
@@ -670,28 +706,30 @@ class FlasherEngine:
         for win in list(self.active_windows):
             try:
                 win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window already destroyed
         self.active_windows.clear()
         self.active_rects.clear()
         if is_strict:
             self.strict_active = True
             try:
-                self.root.withdraw();
+                self.root.withdraw()
                 self.root.update()
-            except:
-                pass
+            except tk.TclError as e:
+                logger.debug(f"Could not withdraw window: {e}")
         else:
             self.strict_active = False
 
         self.video_running = True
-
+        
         # Notify progression system that video started
         try:
             self.progression.video_started()
-        except:
-            pass
-
+        except AttributeError:
+            pass  # Progression not initialized
+        except Exception as e:
+            logger.debug(f"Could not notify video start: {e}")
+        
         self._do_duck()
         self._duck_subliminal_channel(True)
         self.attention_spawns = []
@@ -709,8 +747,8 @@ class FlasherEngine:
                 curved_vol = max(0.05, vol ** 1.5)  # Gentler curve, minimum 5%
                 self.vid_channel.set_volume(curved_vol)
                 self.vid_channel.play(self.vid_sound)
-            except:
-                pass
+            except pygame.error as e:
+                logger.warning(f"Could not play video audio: {e}")
 
         self.cap = cv2.VideoCapture(video_path)
         if not self.cap.isOpened(): self._cleanup_video(); return
@@ -837,7 +875,8 @@ class FlasherEngine:
         try:
             t_win = TransparentTextWindow(self.root, text, rx, ry, w, h, win_x, win_y, size, on_hit)
             self.active_floating_texts.append(t_win)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not create attention window: {e}")
             return
 
         lifespan_sec = self.settings.get('attention_lifespan', 4)
@@ -847,40 +886,42 @@ class FlasherEngine:
                 self.active_floating_texts.remove(t_win)
                 try:
                     t_win.destroy()
-                except:
-                    pass
+                except tk.TclError:
+                    pass  # Already destroyed
 
         self.root.after(int(lifespan_sec * 1000), expire)
 
     def _cleanup_video(self):
         self.video_running = False
         self.busy = False
-
+        
         # Notify progression system that video ended
         try:
             self.progression.video_ended()
-        except:
-            pass
-
+        except AttributeError:
+            pass  # Progression not initialized
+        except Exception as e:
+            logger.debug(f"Could not notify video end: {e}")
+        
         if hasattr(self, 'cap') and self.cap: self.cap.release()
         for vw in self.video_windows:
             try:
                 vw['win'].destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
         self.video_windows = []
         for t in self.active_floating_texts:
             try:
                 t.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
         self.active_floating_texts.clear()
 
         if os.path.exists(TEMP_AUDIO_FILE):
             try:
                 os.remove(TEMP_AUDIO_FILE)
-            except:
-                pass
+            except OSError as e:
+                logger.debug(f"Could not remove temp audio: {e}")
 
         self.ducker.unduck()
         self._duck_subliminal_channel(False)
@@ -892,7 +933,7 @@ class FlasherEngine:
             if not passed:
                 loop_needed = True
             elif random.random() < 0.10:
-                loop_needed = True;
+                loop_needed = True
                 is_troll_loop = True
             if passed:
                 self._add_xp(10, is_video_context=True)
@@ -910,10 +951,10 @@ class FlasherEngine:
         if self.strict_active:
             self.strict_active = False
             try:
-                self.root.deiconify();
+                self.root.deiconify()
                 self.root.lift()
-            except:
-                pass
+            except tk.TclError as e:
+                logger.debug(f"Could not restore window: {e}")
 
         if self.settings.get('startle_enabled'): self.schedule_next("startle")
         if self.settings.get('subliminal_enabled'): self.schedule_next("subliminal")
@@ -997,7 +1038,7 @@ class FlasherEngine:
             self.active_windows.remove(win)
             self.active_rects = [r for r in self.active_rects if r['win'] != win]
         win.destroy()
-
+        
         # Only spawn more if corruption mode is enabled AND not in cleanup phase
         if self.settings.get('flash_corruption', False) and not getattr(self, '_cleanup_in_progress', False):
             max_hydra = self.settings.get('flash_hydra_limit', 30)
@@ -1011,17 +1052,17 @@ class FlasherEngine:
         if not self.running: return
         media_pool = self.get_files(self.paths['images'])
         if not media_pool: return
-
+        
         # Cap max_hydra to 20 to prevent excessive images
         max_hydra = min(max_hydra, 20)
-
+        
         # Calculate how many we can actually spawn (max 2, but respect limit)
         space_available = max_hydra - current_count
         num_to_spawn = min(2, space_available)
-
+        
         if num_to_spawn <= 0:
             return
-
+        
         selected = [random.choice(media_pool) for _ in range(num_to_spawn)]
         monitors = self._get_monitors_safe()
         scale = self.settings.get('image_scale', 1.0)
@@ -1095,11 +1136,11 @@ class FlasherEngine:
             if not data['is_multiplication']: self.busy = False
             return
         duration = 5.0
-
+        
         # Always duck audio when showing flash images
         self._do_duck()
         self._duck_subliminal_channel(True)
-
+        
         if data['sound_path']:
             try:
                 if data.get('processed_data') and data['processed_data'][0]['is_startle']:
@@ -1114,17 +1155,17 @@ class FlasherEngine:
                     self._add_xp(2)
             except Exception:
                 pass
-
+        
         # Schedule unduck after duration (sound length or default 5s)
         unduck_delay = int(duration * 1000) + 1500
         self.root.after(unduck_delay, self.ducker.unduck)
         self.root.after(unduck_delay - 1000, lambda: self._duck_subliminal_channel(False))
-
+        
         # Force cleanup all flash windows 1 second after audio ends
         # This prevents hydra mode from spawning forever
         cleanup_delay = int(duration * 1000) + 1000
         self.root.after(cleanup_delay, self._force_flash_cleanup)
-
+        
         self.virtual_end_time = time.time() + duration
         if not data['processed_data']:
             if not data['is_multiplication']: self.busy = False
@@ -1145,7 +1186,7 @@ class FlasherEngine:
 
             self.root.after(delay_ms, spawn_later)
         if not data['is_multiplication']: self.busy = False
-
+    
     def _force_flash_cleanup(self):
         """Force cleanup all flash windows after audio ends"""
         if not self.running:
@@ -1154,11 +1195,10 @@ class FlasherEngine:
         self.virtual_end_time = time.time()
         # Disable hydra spawning temporarily by marking cleanup in progress
         self._cleanup_in_progress = True
-
+        
         # Schedule re-enabling after windows fade out
         def re_enable():
             self._cleanup_in_progress = False
-
         self.root.after(2000, re_enable)
 
     def _delayed_audio_start(self, sound_path):
@@ -1227,7 +1267,7 @@ class FlasherEngine:
         if leveled_up:
             self.progression.check_unlocks(current_level)
             self._play_levelup_sound()
-
+    
     def _play_levelup_sound(self):
         """Play level up celebration sound"""
         try:

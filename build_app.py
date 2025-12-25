@@ -39,7 +39,7 @@ def clean_previous_builds():
     spec_file = f"{APP_NAME}.spec"
     if os.path.exists(spec_file):
         os.remove(spec_file)
-    
+
     # Remove old release zip if exists
     old_zip = f"{APP_NAME}_Release.zip"
     if os.path.exists(old_zip):
@@ -58,8 +58,11 @@ def run_pyinstaller():
         "comtypes",
         "screeninfo",
         "PIL",
+        "PIL._tkinter_finder",
         "cv2",
         "imageio",
+        "customtkinter",
+        "darkdetect",
         "engine",  # Your local modules
         "gui",
         "utils",
@@ -80,6 +83,10 @@ def run_pyinstaller():
 
         # Collect CustomTkinter assets (themes, etc.)
         "--collect-all", "customtkinter",
+        "--collect-all", "darkdetect",
+
+        # Collect PIL/Pillow
+        "--collect-all", "PIL",
 
         # Fix for imageio dependency issues
         "--copy-metadata=imageio",
@@ -133,9 +140,9 @@ def copy_assets():
 def copy_documentation():
     """Copies README, CHANGELOG, and other docs to the dist folder."""
     print_step("Copying Documentation...")
-    
+
     dist_folder = os.path.join("dist", APP_NAME)
-    
+
     for filename in INCLUDE_FILES:
         if os.path.exists(filename):
             target_path = os.path.join(dist_folder, filename)
