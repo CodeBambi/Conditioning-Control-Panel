@@ -1,13 +1,138 @@
-.idea/
-BambiBrowserData/
-settings.json
-playback_cache.wav
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.spec
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
 build/
+develop-eggs/
 dist/
-assets/startle_videos/*
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Application specific
+settings.json
+presets.json
+presets/*.json
+!presets/.gitkeep
+
+# Browser data
+BambiBrowserData/
+
+# PyInstaller / Release builds
+*_Release/
+Conditioning Control Panel_Release/
+
+# Keep icon file
+!*.ico
+
+# Assets - user content (keep structure, ignore content)
 assets/images/*
+!assets/images/.gitkeep
+assets/sounds/*
+!assets/sounds/.gitkeep
 assets/backgrounds/*
-assets/Sub_audio/*
-!assets/images/Conditioning Control Panel.png  # (Optional: Keep specific important files like a logo)
+!assets/backgrounds/.gitkeep
+assets/startle_videos/*
+!assets/startle_videos/.gitkeep
+assets/sub_audio/*
+!assets/sub_audio/.gitkeep
+
+# Keep asset folders but not content
+!assets/icon.png
+!assets/bubble.png
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Chrome/Selenium
+chromedriver.exe
+chromedriver
+geckodriver.exe
+geckodriver
+.wdm/
+
+# Audio temp files
+temp_audio.mp3
+
+# Backup files
+*.bak
+*.backup
+*_backup.*
+
+# Screenshots and recordings
+screenshots/
+recordings/
+
+# Debug files
+debug_*.txt
+debug_*.log
+playback_cache.wav

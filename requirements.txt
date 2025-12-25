@@ -1,10 +1,35 @@
-customtkinter
-Pillow
-pygame
-imageio
-imageio-ffmpeg
-opencv-python
-pystray
-comtypes
-pycaw
-screeninfo
+# Conditioning Control Panel v2.0 - Requirements
+
+# UI Framework
+customtkinter>=5.2.0
+
+# Image Processing
+Pillow>=9.0.0
+
+# Audio
+pygame>=2.1.0
+
+# Video Processing
+imageio>=2.25.0
+imageio-ffmpeg>=0.4.8
+opencv-python>=4.7.0
+
+# System Tray
+pystray>=0.19.0
+
+# Windows Audio Control (for audio ducking)
+comtypes>=1.1.14
+pycaw>=20220416
+
+# Multi-monitor support
+screeninfo>=0.8.1
+
+# Browser automation (for embedded browser)
+selenium>=4.8.0
+webdriver-manager>=3.8.0
+
+# Optional: Better GIF handling
+# pillow-heif>=0.10.0
+
+# Optional: Hardware acceleration
+# opencv-python-headless>=4.7.0
