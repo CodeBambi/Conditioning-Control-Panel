@@ -11,14 +11,12 @@ from PIL import Image, ImageTk, ImageDraw
 try:
     import pystray
     from pystray import MenuItem as item
-
     TRAY_AVAILABLE = True
 except ImportError:
     TRAY_AVAILABLE = False
 
 try:
     from screeninfo import get_monitors
-
     SCREENINFO_AVAILABLE = True
 except ImportError:
     SCREENINFO_AVAILABLE = False
@@ -27,40 +25,55 @@ from config import (
     THEME, DEFAULT_SETTINGS, BAMBI_POOL_DICT, ASSETS_DIR, BASE_DIR,
     SETTINGS_FILE, PRESETS_FILE, STARTUP_FILE_PATH
 )
-from utils import SingleInstanceChecker
+
+# Initialize logging
+try:
+    from security import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger("ConditioningPanel")
+
+# Try to import SingleInstanceChecker, create dummy if not available
+try:
+    from utils import SingleInstanceChecker
+except ImportError:
+    class SingleInstanceChecker:
+        def __init__(self, name=""): pass
+        def is_single_instance(self): return True
+        def cleanup(self): pass
+
 from engine import FlasherEngine
 from ui_components import TextManagerDialog
 
 # --- HOT PINK ACCENTS + PURPLE BACKGROUNDS ---
 M = {
-    "bg": "#1A0A1F",  # Dark purple background
-    "header": "#2D1B3D",  # Purple header
-    "card": "#251830",  # Dark purple card
+    "bg": "#1A0A1F",           # Dark purple background
+    "header": "#2D1B3D",       # Purple header
+    "card": "#251830",         # Dark purple card
     "card_hover": "#2F1E3A",
-    "border": "#6B3A6B",  # Purple-pink border
-    "fg": "#FFE6F6",  # Light pink text
-    "fg_dim": "#B088B0",  # Dimmed purple-pink text
-    "accent": "#FF69B4",  # HOT PINK - primary accent
-    "accent_dim": "#DB7093",  # Pale violet red
-    "btn": "#FF1493",  # Deep pink - buttons
-    "btn_hover": "#C71585",  # Medium violet red
-    "danger": "#FF4757",  # Red
+    "border": "#6B3A6B",       # Purple-pink border
+    "fg": "#FFE6F6",           # Light pink text
+    "fg_dim": "#B088B0",       # Dimmed purple-pink text
+    "accent": "#FF69B4",       # HOT PINK - primary accent
+    "accent_dim": "#DB7093",   # Pale violet red
+    "btn": "#FF1493",          # Deep pink - buttons
+    "btn_hover": "#C71585",    # Medium violet red
+    "danger": "#FF4757",       # Red
     "danger_hover": "#C0392B",
-    "success": "#00E676",  # Green
+    "success": "#00E676",      # Green
     "success_hover": "#00C853",
-    "switch_on": "#FF69B4",  # Hot pink
-    "switch_off": "#3D2847",  # Purple off state
-    "slider": "#FF69B4",  # Hot pink
-    "slider_bg": "#1A0A20",  # Dark purple
-    "input_bg": "#1A0A20",  # Dark purple
-    "tooltip_bg": "#3D2050",  # Purple tooltip
-    "xp_bar": "#FF69B4",  # Hot pink XP bar
+    "switch_on": "#FF69B4",    # Hot pink
+    "switch_off": "#3D2847",   # Purple off state
+    "slider": "#FF69B4",       # Hot pink
+    "slider_bg": "#1A0A20",    # Dark purple
+    "input_bg": "#1A0A20",     # Dark purple
+    "tooltip_bg": "#3D2050",   # Purple tooltip
+    "xp_bar": "#FF69B4",       # Hot pink XP bar
 }
 
 
 class ModernToolTip:
     """Modern tooltip with wrap and styling"""
-
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
@@ -94,7 +107,7 @@ class ControlPanel:
         self.root = root
         ctk.set_appearance_mode("Dark")
         self.root.title("💗 Conditioning Dashboard")
-        self.root.geometry("1100x820")  # Taller window
+        self.root.geometry("1100x900")  # Taller window
         self.root.configure(fg_color=M["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
 
@@ -114,8 +127,8 @@ class ControlPanel:
                 img = Image.open(self.icon_path)
                 self.icon_photo = ImageTk.PhotoImage(img)
                 self.root.wm_iconphoto(True, self.icon_photo)
-            except:
-                pass
+            except (IOError, OSError, tk.TclError) as e:
+                logger.debug(f"Could not load icon: {e}")
 
         self.root.after(10, self._style_titlebar)
         self.icon = None
@@ -141,7 +154,7 @@ class ControlPanel:
 
         # Initialize browser after GUI is ready
         self.root.after(1000, self._init_browser)
-
+        
         # Show welcome message on first launch (after browser loads)
         self.root.after(1500, self._check_first_launch)
 
@@ -151,7 +164,7 @@ class ControlPanel:
             self.root.after(2000, lambda: self._toggle(manual=False))
         if self.settings.get('force_startle_on_launch'):
             self.root.after(3000, lambda: self.engine.trigger_event("startle"))
-
+    
     def _check_first_launch(self):
         """Show welcome message on first launch"""
         if not self.settings.get('welcomed', False):
@@ -159,7 +172,7 @@ class ControlPanel:
             # Mark as welcomed
             self.settings['welcomed'] = True
             self._save_settings()
-
+    
     def _show_welcome_dialog(self):
         """Show a welcome dialog for new users"""
         welcome_win = ctk.CTkToplevel(self.root)
@@ -169,26 +182,26 @@ class ControlPanel:
         welcome_win.transient(self.root)
         welcome_win.grab_set()
         welcome_win.configure(fg_color=M["bg"])
-
+        
         # Force on top of everything including browser
         welcome_win.attributes('-topmost', True)
         welcome_win.lift()
         welcome_win.focus_force()
-
+        
         # Center on screen
         welcome_win.update_idletasks()
         x = (welcome_win.winfo_screenwidth() - 500) // 2
         y = (welcome_win.winfo_screenheight() - 420) // 2
         welcome_win.geometry(f"500x420+{x}+{y}")
-
+        
         # Keep on top after geometry change
         welcome_win.after(100, lambda: welcome_win.attributes('-topmost', True))
         welcome_win.after(100, lambda: welcome_win.lift())
-
+        
         # Header
-        ctk.CTkLabel(welcome_win, text="🎀 Welcome, Bambi! 🎀",
-                     font=("Segoe UI", 24, "bold"), text_color=M["accent"]).pack(pady=(20, 10))
-
+        ctk.CTkLabel(welcome_win, text="🎀 Welcome, Bambi! 🎀", 
+                    font=("Segoe UI", 24, "bold"), text_color=M["accent"]).pack(pady=(20, 10))
+        
         # Message
         msg = """This is your Conditioning Control Panel!
 
@@ -203,42 +216,42 @@ your own settings in the Settings tab.
 Remember: ESC is your panic button (unless disabled)!
 
 Enjoy the pink fog... 💕"""
-
-        ctk.CTkLabel(welcome_win, text=msg, font=("Segoe UI", 12),
-                     text_color=M["fg"], justify="center").pack(pady=10, padx=20)
-
+        
+        ctk.CTkLabel(welcome_win, text=msg, font=("Segoe UI", 12), 
+                    text_color=M["fg"], justify="center").pack(pady=10, padx=20)
+        
         # Preset selection
-        ctk.CTkLabel(welcome_win, text="Choose a starting preset:",
-                     font=("Segoe UI", 12, "bold"), text_color=M["fg_dim"]).pack(pady=(15, 5))
-
+        ctk.CTkLabel(welcome_win, text="Choose a starting preset:", 
+                    font=("Segoe UI", 12, "bold"), text_color=M["fg_dim"]).pack(pady=(15, 5))
+        
         preset_frame = ctk.CTkFrame(welcome_win, fg_color="transparent")
         preset_frame.pack(pady=5)
-
+        
         def apply_preset(name):
             self._apply_builtin_preset(name)
             welcome_win.destroy()
-
+        
         presets = [
             ("🌸 Beginner Bimbo", "beginner", "Low intensity, perfect for starting"),
             ("💄 Bimbo in Training", "training", "Medium-low, gentle conditioning"),
             ("💋 Advanced Bimbo", "advanced", "Medium-high, more intense"),
             ("👑 Ultimate Bimbodoll", "ultimate", "High intensity experience"),
         ]
-
+        
         for label, key, tip in presets:
             btn = ctk.CTkButton(preset_frame, text=label, font=("Segoe UI", 11),
-                                fg_color=M["card"], hover_color=M["btn"],
-                                text_color=M["fg"], width=200, height=30,
-                                command=lambda k=key: apply_preset(k))
+                               fg_color=M["card"], hover_color=M["btn"],
+                               text_color=M["fg"], width=200, height=30,
+                               command=lambda k=key: apply_preset(k))
             btn.pack(pady=3)
             ModernToolTip(btn, tip)
-
+        
         # Skip button
-        ctk.CTkButton(welcome_win, text="Skip (Keep Current Settings)",
-                      fg_color="transparent", hover_color=M["card"],
-                      text_color=M["fg_dim"], font=("Segoe UI", 10),
-                      command=welcome_win.destroy).pack(pady=15)
-
+        ctk.CTkButton(welcome_win, text="Skip (Keep Current Settings)", 
+                     fg_color="transparent", hover_color=M["card"],
+                     text_color=M["fg_dim"], font=("Segoe UI", 10),
+                     command=welcome_win.destroy).pack(pady=15)
+    
     def _apply_builtin_preset(self, preset_key):
         """Apply a built-in preset"""
         presets = {
@@ -296,7 +309,7 @@ Enjoy the pink fog... 💕"""
                 "bubbles_enabled": True, "bubbles_freq": 7, "bubbles_link_ramp": True,
             },
         }
-
+        
         if preset_key in presets:
             preset_settings = presets[preset_key]
             # Preserve player progress
@@ -318,7 +331,7 @@ Enjoy the pink fog... 💕"""
                 # Update status
                 if hasattr(self, 'browser_status'):
                     self.browser_status.configure(text="● Loading...", text_color=M["accent"])
-
+                
                 self.engine.browser.launch_embedded(self.browser_container)
                 self.root.after(3000, self._apply_browser_zoom)
                 self.root.after(4000, self._browser_ready)
@@ -340,16 +353,16 @@ Enjoy the pink fog... 💕"""
                 self.engine.browser.driver.execute_script(zoom_script)
             elif hasattr(self.engine.browser, 'execute_script'):
                 self.engine.browser.execute_script(zoom_script)
-        except:
-            pass
+        except (AttributeError, Exception) as e:
+            logger.debug(f"Could not apply browser zoom: {e}")
 
     def _style_titlebar(self):
         try:
             hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
             color = 0x001F0A1A  # BGR format - dark purple
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(ctypes.c_int(color)), 4)
-        except:
-            pass
+        except (OSError, AttributeError) as e:
+            logger.debug(f"Could not style titlebar: {e}")
 
     def _load_settings(self):
         if os.path.exists(SETTINGS_FILE):
@@ -363,8 +376,8 @@ Enjoy the pink fog... 💕"""
                 if 'attention_pool' not in m:
                     m['attention_pool'] = BAMBI_POOL_DICT.copy()
                 return m
-            except:
-                pass
+            except (IOError, OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Could not load settings: {e}")
         return DEFAULT_SETTINGS.copy()
 
     def _save_settings(self):
@@ -381,8 +394,8 @@ Enjoy the pink fog... 💕"""
             try:
                 with open(PRESETS_FILE, 'r') as f:
                     return json.load(f)
-            except:
-                pass
+            except (IOError, OSError, json.JSONDecodeError) as e:
+                logger.warning(f"Could not load presets: {e}")
         return {}
 
     def _save_presets(self):
@@ -400,11 +413,11 @@ Enjoy the pink fog... 💕"""
         # Built-in preset mapping
         builtin_map = {
             "🌸 Beginner Bimbo": "beginner",
-            "💄 Bimbo in Training": "training",
+            "💄 Bimbo in Training": "training", 
             "💋 Advanced Bimbo": "advanced",
             "👑 Ultimate Bimbodoll": "ultimate",
         }
-
+        
         if name in builtin_map:
             self._apply_builtin_preset(builtin_map[name])
             return
@@ -423,7 +436,6 @@ Enjoy the pink fog... 💕"""
     def _create_tray(self):
         def setup(icon):
             icon.visible = True
-
         try:
             if self.icon_path:
                 img = Image.open(self.icon_path)
@@ -435,8 +447,8 @@ Enjoy the pink fog... 💕"""
             )
             self.icon = pystray.Icon("app", img, "Conditioning", menu)
             threading.Thread(target=lambda: self.icon.run(setup), daemon=True).start()
-        except:
-            pass
+        except (IOError, OSError) as e:
+            logger.warning(f"Could not create tray icon: {e}")
 
     def minimize_to_tray(self):
         self._save_settings()
@@ -448,16 +460,16 @@ Enjoy the pink fog... 💕"""
         self._sync_btns()
         try:
             self.engine.browser.resize_to_container()
-        except:
-            pass
+        except AttributeError:
+            pass  # Browser not initialized
 
     def _quit(self, icon=None, item=None):
         self.engine.panic_stop()
         self.engine.esc_listener_active = False
         try:
             self.engine.browser.close()
-        except:
-            pass
+        except AttributeError:
+            pass  # Browser not initialized
         self._save_settings()
         if self.icon:
             self.icon.stop()
@@ -495,8 +507,7 @@ Enjoy the pink fog... 💕"""
     def _card(self, parent, title, row, col, rs=1, cs=1):
         f = ctk.CTkFrame(parent, corner_radius=10, fg_color=M["card"], border_width=1, border_color=M["border"])
         f.grid(row=row, column=col, rowspan=rs, columnspan=cs, sticky="nsew", padx=3, pady=3)
-        ctk.CTkLabel(f, text=title, font=("Segoe UI", 12, "bold"), text_color=M["fg"]).pack(pady=(6, 2), padx=8,
-                                                                                            anchor="w")
+        ctk.CTkLabel(f, text=title, font=("Segoe UI", 12, "bold"), text_color=M["fg"]).pack(pady=(6, 2), padx=8, anchor="w")
         ctk.CTkFrame(f, height=1, fg_color=M["border"]).pack(fill="x", padx=8, pady=(0, 4))
         return f
 
@@ -512,11 +523,9 @@ Enjoy the pink fog... 💕"""
             self._tip(lbl, tip)
         val = ctk.CTkLabel(row, text=fmt.format(min_v), text_color=M["accent"], font=("Segoe UI", 10, "bold"), width=35)
         val.pack(side="right")
-
         def upd(v):
             val.configure(text=fmt.format(v))
             self._notify()
-
         sl = ctk.CTkSlider(row, from_=min_v, to=max_v, button_color=M["accent"], button_hover_color=M["btn"],
                            progress_color=M["slider"], fg_color=M["slider_bg"], command=upd, height=12)
         sl.pack(side="right", fill="x", expand=True, padx=4)
@@ -559,8 +568,7 @@ Enjoy the pink fog... 💕"""
         hdr.pack_propagate(False)
         top = ctk.CTkFrame(hdr, fg_color="transparent")
         top.pack(fill="x", padx=12, pady=6)
-        ctk.CTkLabel(top, text="💗 Conditioning Dashboard", font=("Segoe UI", 16, "bold"), text_color="white").pack(
-            side="left")
+        ctk.CTkLabel(top, text="💗 Conditioning Dashboard", font=("Segoe UI", 16, "bold"), text_color="white").pack(side="left")
         self.preset_menu = ctk.CTkOptionMenu(top, values=[], command=self._handle_preset, fg_color=M["card"],
                                              button_color=M["btn"], text_color="white", height=26, width=110)
         self._update_preset_menu()
@@ -596,7 +604,7 @@ Enjoy the pink fog... 💕"""
         p.columnconfigure(0, weight=1)
         p.columnconfigure(1, weight=1)
         p.columnconfigure(2, weight=2)  # Browser column
-        p.rowconfigure(0, weight=1)  # Main content row
+        p.rowconfigure(0, weight=1)     # Main content row
 
         # Col 1 - Flash, Visuals, Logo/Buttons
         c1 = ctk.CTkFrame(p, fg_color="transparent")
@@ -605,16 +613,12 @@ Enjoy the pink fog... 💕"""
         # Flash
         cf = self._card(c1, "⚡ Flash Images", 0, 0)
         self.sw_flash = self._switch(cf, "Enable", "Show random images from your 'images' folder at set intervals.")
-        self.sw_click = self._switch(cf, "Clickable",
-                                     "ON: Click images to close them\nOFF: Ghost mode - images pass through clicks")
-        self.sw_corrupt = self._switch(cf, "💀 Corruption",
-                                       "ON: Clicking closes 1 but spawns 2 more (hydra effect)\nOFF: Clicking just closes the image")
-        self.sl_freq, self.lb_freq = self._slider(cf, "Per Min", 1, 10,
-                                                  tip="Flashes per minute. Higher = more frequent.")
+        self.sw_click = self._switch(cf, "Clickable", "ON: Click images to close them\nOFF: Ghost mode - images pass through clicks")
+        self.sw_corrupt = self._switch(cf, "💀 Corruption", "ON: Clicking closes 1 but spawns 2 more (hydra effect)\nOFF: Clicking just closes the image")
+        self.sl_freq, self.lb_freq = self._slider(cf, "Per Min", 1, 10, tip="Flashes per minute. Higher = more frequent.")
         self.sl_img, self.lb_img = self._slider(cf, "Images", 1, 10, tip="Number of images per flash event.")
-        self.sl_hydra, self.lb_hydra = self._slider(cf, "Max On Screen", 1, 20,
-                                                    tip="Maximum images on screen at once.\nAutomatically stays >= Images count.")
-
+        self.sl_hydra, self.lb_hydra = self._slider(cf, "Max On Screen", 1, 20, tip="Maximum images on screen at once.\nAutomatically stays >= Images count.")
+        
         # Link sliders: Max must be >= Images (with proper label updates)
         def on_img_change(val):
             img_count = int(float(val))
@@ -625,7 +629,7 @@ Enjoy the pink fog... 💕"""
                 self.sl_hydra.set(img_count)
                 self.lb_hydra.configure(text=str(img_count))
             self._notify()
-
+        
         def on_max_change(val):
             max_count = int(float(val))
             img_count = int(self.sl_img.get())
@@ -635,7 +639,7 @@ Enjoy the pink fog... 💕"""
                 self.sl_hydra.set(max_count)
             self.lb_hydra.configure(text=str(max_count))
             self._notify()
-
+        
         self.sl_img.configure(command=on_img_change)
         self.sl_hydra.configure(command=on_max_change)
 
@@ -656,12 +660,12 @@ Enjoy the pink fog... 💕"""
                 pil = Image.open(self.icon_path)
                 w, h = pil.size
                 tw = 280  # Logo size
-                th = int(tw / (w / h))
+                th = int(tw / (w/h))
                 pil = pil.resize((tw, th), Image.Resampling.LANCZOS)
                 ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=(tw, th))
                 ctk.CTkLabel(logo_f, text="", image=ctk_img).grid(row=0, column=0, pady=8)
-            except:
-                pass
+            except (IOError, OSError, tk.TclError) as e:
+                logger.debug(f"Could not load logo: {e}")
         self.btn_main = ctk.CTkButton(logo_f, text="▶ START", fg_color=M["success"], hover_color=M["success_hover"],
                                       font=("Segoe UI", 16, "bold"), height=50, corner_radius=25,
                                       command=lambda: self._toggle(True))
@@ -717,8 +721,7 @@ Enjoy the pink fog... 💕"""
                                     progress_color=M["switch_on"], command=self._notify)
         self.sw_sub.pack(side="left")
         self._tip(self.sw_sub, "Flash text messages briefly on screen.")
-        ctk.CTkButton(subr, text="🎨", width=30, height=20, fg_color=M["accent"], command=self._style_editor).pack(
-            side="right")
+        ctk.CTkButton(subr, text="🎨", width=30, height=20, fg_color=M["accent"], command=self._style_editor).pack(side="right")
         self.sl_sfreq, self.lb_sfreq = self._slider(cs, "Per Min", 1, 30, tip="Subliminal messages per minute.")
         self.sl_sdur, self.lb_sdur = self._slider(cs, "Frames", 1, 10, tip="Duration in frames (longer = readable).")
         self.sl_sop, self.lb_sop = self._slider(cs, "Opacity", 10, 100, "{:.0f}%", "Text visibility.")
@@ -734,24 +737,20 @@ Enjoy the pink fog... 💕"""
         sg.pack(fill="x", padx=6, pady=4)
         sg.grid_columnconfigure(0, weight=1)
         sg.grid_columnconfigure(1, weight=1)
-        self.sw_dual = ctk.CTkSwitch(sg, text="Dual Mon", font=("Segoe UI", 9), text_color=M["fg"],
-                                     command=self._notify)
+        self.sw_dual = ctk.CTkSwitch(sg, text="Dual Mon", font=("Segoe UI", 9), text_color=M["fg"], command=self._notify)
         self.sw_dual.grid(row=0, column=0, sticky="w", padx=2, pady=2)
         self._tip(self.sw_dual, "Show effects on all monitors.")
         self.sw_startup = ctk.CTkSwitch(sg, text="Win Start", font=("Segoe UI", 9), text_color=M["fg"],
                                         command=lambda: self._danger_check(self.sw_startup, "Startup"))
         self.sw_startup.grid(row=0, column=1, sticky="w", padx=2, pady=2)
         self._tip(self.sw_startup, "⚠️ Start app with Windows.")
-        self.sw_force = ctk.CTkSwitch(sg, text="Vid Launch", font=("Segoe UI", 9), text_color=M["fg"],
-                                      command=self._notify)
+        self.sw_force = ctk.CTkSwitch(sg, text="Vid Launch", font=("Segoe UI", 9), text_color=M["fg"], command=self._notify)
         self.sw_force.grid(row=1, column=0, sticky="w", padx=2, pady=2)
         self._tip(self.sw_force, "Play video immediately on app start.")
-        self.sw_auto = ctk.CTkSwitch(sg, text="Auto Run", font=("Segoe UI", 9), text_color=M["fg"],
-                                     command=self._notify)
+        self.sw_auto = ctk.CTkSwitch(sg, text="Auto Run", font=("Segoe UI", 9), text_color=M["fg"], command=self._notify)
         self.sw_auto.grid(row=1, column=1, sticky="w", padx=2, pady=2)
         self._tip(self.sw_auto, "Start conditioning automatically.")
-        self.sw_min = ctk.CTkSwitch(sg, text="Start Hidden", font=("Segoe UI", 9), text_color=M["fg"],
-                                    command=self._notify)
+        self.sw_min = ctk.CTkSwitch(sg, text="Start Hidden", font=("Segoe UI", 9), text_color=M["fg"], command=self._notify)
         self.sw_min.grid(row=2, column=0, sticky="w", padx=2, pady=2)
         self._tip(self.sw_min, "Start minimized to tray.")
         self.sw_nopanic = ctk.CTkSwitch(sg, text="⚠️ No Panic", font=("Segoe UI", 9), text_color=M["danger"],
@@ -765,44 +764,44 @@ Enjoy the pink fog... 💕"""
         c3.rowconfigure(0, weight=3)  # Browser gets more space
         c3.rowconfigure(1, weight=1)  # Audio gets less
         c3.columnconfigure(0, weight=1)
-
+        
         # Browser
         cb = self._card(c3, "🌐 Browser", 0, 0)
         cb.configure(height=350)  # Minimum height
-
+        
         # Browser wrapper to allow overlay
         browser_wrapper = ctk.CTkFrame(cb, fg_color=M["slider_bg"], corner_radius=6)
         browser_wrapper.pack(fill="both", expand=True, padx=6, pady=6)
-
+        
         # Themed header overlay to cover Chrome toolbar - MUST be tall enough
         self.browser_header = ctk.CTkFrame(browser_wrapper, fg_color=M["header"], height=45, corner_radius=0)
         self.browser_header.pack(fill="x", side="top")
         self.browser_header.pack_propagate(False)
-
+        
         # Header content - looks like part of the app
         header_content = ctk.CTkFrame(self.browser_header, fg_color="transparent")
         header_content.pack(fill="both", expand=True, padx=10)
         header_content.grid_columnconfigure(0, weight=1)
         header_content.grid_rowconfigure(0, weight=1)
-
+        
         left_frame = ctk.CTkFrame(header_content, fg_color="transparent")
         left_frame.pack(side="left", fill="y", pady=8)
-        ctk.CTkLabel(left_frame, text="☁️ Bambi Cloud",
+        ctk.CTkLabel(left_frame, text="☁️ Bambi Cloud", 
                      font=("Segoe UI", 12, "bold"), text_color=M["accent"]).pack(side="left")
-
+        
         # Right side with status
         right_frame = ctk.CTkFrame(header_content, fg_color="transparent")
         right_frame.pack(side="right", fill="y", pady=8)
-        self.browser_status = ctk.CTkLabel(right_frame, text="● Online",
+        self.browser_status = ctk.CTkLabel(right_frame, text="● Online", 
                                            font=("Segoe UI", 10), text_color=M["success"])
         self.browser_status.pack(side="right")
-
+        
         # Actual browser container below the header
         self.browser_container = ctk.CTkFrame(browser_wrapper, fg_color=M["slider_bg"], corner_radius=0)
         self.browser_container.pack(fill="both", expand=True)
-
+        
         # Loading label (will be covered by browser once loaded)
-        ctk.CTkLabel(self.browser_container, text="🌐 Loading...",
+        ctk.CTkLabel(self.browser_container, text="🌐 Loading...", 
                      text_color=M["fg_dim"], font=("Segoe UI", 11)).place(relx=0.5, rely=0.5, anchor="center")
 
         # Audio
@@ -816,8 +815,7 @@ Enjoy the pink fog... 💕"""
         self.sl_vol, self.lb_vol = self._slider(ca, "Master", 0, 100, "{:.0f}%", "Master volume for all sounds.")
         dr = ctk.CTkFrame(ca, fg_color="transparent")
         dr.pack(fill="x", padx=8, pady=4)
-        self.sw_duck = ctk.CTkSwitch(dr, text="Audio Duck", font=("Segoe UI", 10), text_color=M["fg"],
-                                     command=self._notify)
+        self.sw_duck = ctk.CTkSwitch(dr, text="Audio Duck", font=("Segoe UI", 10), text_color=M["fg"], command=self._notify)
         self.sw_duck.pack(side="left")
         self._tip(self.sw_duck, "Lower system volume during effects.")
         self.sl_duck, self.lb_duck = self._slider(ca, "Duck %", 0, 100, "{:.0f}%", "How much to reduce other apps.")
@@ -832,8 +830,7 @@ Enjoy the pink fog... 💕"""
         csc = self._card(p, "⏱️ Intensity Ramp", 0, 0)
         self.sw_sched = self._switch(csc, "Enable Ramping", "Gradually increase intensity over time.")
         self.sl_schdur, self.lb_schdur = self._slider(csc, "Duration", 10, 180, "{:.0f}m", "Minutes to reach max.")
-        self.sl_schmult, self.lb_schmult = self._slider(csc, "Max Mult", 1.0, 5.0, "{:.1f}x",
-                                                        "Maximum intensity multiplier.")
+        self.sl_schmult, self.lb_schmult = self._slider(csc, "Max Mult", 1.0, 5.0, "{:.1f}x", "Maximum intensity multiplier.")
         self.sw_linkalpha = self._switch(csc, "Link Opacity", "Also increase image opacity over time.")
         self.sched_bar = ctk.CTkProgressBar(csc, progress_color=M["accent"], fg_color=M["slider_bg"], height=6)
         self.sched_bar.pack(fill="x", padx=8, pady=4)
@@ -873,13 +870,11 @@ Enjoy the pink fog... 💕"""
         spr = ctk.CTkFrame(self.lv10_unlocked, fg_color="transparent")
         spr.pack(fill="x", padx=8, pady=2)
         ctk.CTkButton(spr, text="📁 GIF", fg_color=M["btn"], height=24, command=self._pick_spiral).pack(side="left")
-        self.sl_spirop, self.lb_spirop = self._slider(self.lv10_unlocked, "Opacity", 5, 50, "{:.0f}%",
-                                                      "Spiral visibility.")
+        self.sl_spirop, self.lb_spirop = self._slider(self.lv10_unlocked, "Opacity", 5, 50, "{:.0f}%", "Spiral visibility.")
         self.sw_spirlink = self._switch(self.lv10_unlocked, "Link Ramp", "Increase with intensity.")
         ctk.CTkFrame(self.lv10_unlocked, height=1, fg_color=M["border"]).pack(fill="x", padx=8, pady=6)
         self.sw_pink = self._switch(self.lv10_unlocked, "💗 Pink Filter", "Apply pink tint to screen.")
-        self.sl_pinkop, self.lb_pinkop = self._slider(self.lv10_unlocked, "Intensity", 5, 50, "{:.0f}%",
-                                                      "Pink strength.")
+        self.sl_pinkop, self.lb_pinkop = self._slider(self.lv10_unlocked, "Intensity", 5, 50, "{:.0f}%", "Pink strength.")
         self.sw_pinklink = self._switch(self.lv10_unlocked, "Link Ramp", "Increase with intensity.")
         self.lv10_locked.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -896,11 +891,9 @@ Enjoy the pink fog... 💕"""
 
         # Future
         c50 = self._card(p, "🔥 Level 50", 2, 0)
-        ctk.CTkLabel(c50, text="🔒 Coming Soon...", font=("Segoe UI", 11), text_color=M["fg_dim"]).pack(expand=True,
-                                                                                                       pady=15)
+        ctk.CTkLabel(c50, text="🔒 Coming Soon...", font=("Segoe UI", 11), text_color=M["fg_dim"]).pack(expand=True, pady=15)
         c100 = self._card(p, "👑 Level 100", 2, 1)
-        ctk.CTkLabel(c100, text="🔒 Coming Soon...", font=("Segoe UI", 11), text_color=M["fg_dim"]).pack(expand=True,
-                                                                                                        pady=15)
+        ctk.CTkLabel(c100, text="🔒 Coming Soon...", font=("Segoe UI", 11), text_color=M["fg_dim"]).pack(expand=True, pady=15)
 
         # Buttons
         bf = ctk.CTkFrame(p, fg_color="transparent")
@@ -950,10 +943,8 @@ Enjoy the pink fog... 💕"""
 
     def _get_values(self):
         days = [i for i, b in enumerate(self.day_btns) if b._fg_color == M["btn"]]
-        lvl = self.engine.settings.get('player_level', 1) if hasattr(self, 'engine') else self.settings.get(
-            'player_level', 1)
-        xp = self.engine.settings.get('player_xp', 0.0) if hasattr(self, 'engine') else self.settings.get('player_xp',
-                                                                                                          0.0)
+        lvl = self.engine.settings.get('player_level', 1) if hasattr(self, 'engine') else self.settings.get('player_level', 1)
+        xp = self.engine.settings.get('player_xp', 0.0) if hasattr(self, 'engine') else self.settings.get('player_xp', 0.0)
         return {
             "player_level": lvl, "player_xp": xp,
             "flash_enabled": self.sw_flash.get(), "flash_freq": int(self.sl_freq.get()),
@@ -1004,27 +995,22 @@ Enjoy the pink fog... 💕"""
         d.geometry("300x380")
         d.configure(fg_color=M["bg"])
         d.attributes('-topmost', True)
-
         def pick(k):
             c = colorchooser.askcolor()[1]
             if c:
                 self.settings[k] = c
                 self._notify()
-
         def tog(k, v):
             self.settings[k] = bool(v.get())
             self._notify()
-
         ctk.CTkLabel(d, text="Background", font=("Segoe UI", 12, "bold"), text_color=M["fg"]).pack(pady=10)
         ctk.CTkButton(d, text="Pick Color", fg_color=M["btn"], command=lambda: pick("sub_bg_color")).pack(pady=4)
         bv = ctk.BooleanVar(value=self.settings.get("sub_bg_transparent", False))
-        ctk.CTkCheckBox(d, text="Transparent", variable=bv, text_color=M["fg"],
-                        command=lambda: tog("sub_bg_transparent", bv)).pack(pady=4)
+        ctk.CTkCheckBox(d, text="Transparent", variable=bv, text_color=M["fg"], command=lambda: tog("sub_bg_transparent", bv)).pack(pady=4)
         ctk.CTkLabel(d, text="Text", font=("Segoe UI", 12, "bold"), text_color=M["fg"]).pack(pady=10)
         ctk.CTkButton(d, text="Pick Color", fg_color=M["btn"], command=lambda: pick("sub_text_color")).pack(pady=4)
         tv = ctk.BooleanVar(value=self.settings.get("sub_text_transparent", False))
-        ctk.CTkCheckBox(d, text="Transparent", variable=tv, text_color=M["fg"],
-                        command=lambda: tog("sub_text_transparent", tv)).pack(pady=4)
+        ctk.CTkCheckBox(d, text="Transparent", variable=tv, text_color=M["fg"], command=lambda: tog("sub_text_transparent", tv)).pack(pady=4)
         ctk.CTkLabel(d, text="Border", font=("Segoe UI", 12, "bold"), text_color=M["fg"]).pack(pady=10)
         ctk.CTkButton(d, text="Pick Color", fg_color=M["btn"], command=lambda: pick("sub_border_color")).pack(pady=4)
         ctk.CTkButton(d, text="Close", fg_color=M["card"], command=d.destroy).pack(pady=15)
@@ -1038,11 +1024,9 @@ Enjoy the pink fog... 💕"""
     def _apply_settings(self, s):
         def sw(w, v):
             w.select() if v else w.deselect()
-
         def sl(w, l, v, f="{:.0f}"):
             w.set(v)
             l.configure(text=f.format(v))
-
         sw(self.sw_flash, s.get('flash_enabled', True))
         sl(self.sl_freq, self.lb_freq, s.get('flash_freq', 2))
         sw(self.sw_click, s.get('flash_clickable', True))

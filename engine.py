@@ -47,9 +47,40 @@ except ImportError:
 # Import from our modules
 from config import (
     ASSETS_DIR, IMG_DIR, SND_DIR, SUB_AUDIO_DIR, STARTLE_VID_DIR,
-    TEMP_AUDIO_FILE, DEFAULT_SETTINGS, LIMITS, validate_limits
+    TEMP_AUDIO_FILE, DEFAULT_SETTINGS
 )
-from utils import AudioDucker, safe_load_json, safe_save_json
+
+# Try new config imports, fall back gracefully
+try:
+    from config import LIMITS, validate_limits
+except ImportError:
+    LIMITS = {"max_images_on_screen": 20, "max_videos_per_hour": 20}
+    def validate_limits(s): return s
+
+# Try new utils imports, fall back to old
+try:
+    from utils import AudioDucker, safe_load_json, safe_save_json
+except ImportError:
+    try:
+        from utils import SystemAudioDucker as AudioDucker
+    except ImportError:
+        # Create dummy ducker
+        class AudioDucker:
+            def __init__(self): pass
+            def duck(self, strength=80): pass
+            def unduck(self): pass
+    
+    import json
+    def safe_load_json(fp, default=None):
+        try:
+            with open(fp, 'r') as f: return json.load(f)
+        except (IOError, OSError, json.JSONDecodeError): return default or {}
+    def safe_save_json(fp, data):
+        try:
+            with open(fp, 'w') as f: json.dump(data, f, indent=2)
+            return True
+        except (IOError, OSError, TypeError): return False
+
 from browser import BrowserManager
 from ui_components import TransparentTextWindow
 from progression_system import ProgressionSystem
@@ -524,8 +555,10 @@ class FlasherEngine:
             if resource_mgr.active_effects.get('spiral', False):
                 base_images = min(base_images, 3)  # Max 3 images when spiral active
                 max_allowed = min(max_allowed, 8)
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except (KeyError, AttributeError) as e:
+            logger.debug(f"Resource manager check failed: {e}")
         
         # Clamp base_images to max allowed
         base_images = min(base_images, max_allowed)
@@ -551,8 +584,10 @@ class FlasherEngine:
                 self.root.after(300, self._retry_flash)
                 return
             resource_mgr.flash_done_waiting()
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except (AttributeError, KeyError) as e:
+            logger.debug(f"Resource manager retry check failed: {e}")
         self.busy = True
         self._flash_images()
 
@@ -592,7 +627,8 @@ class FlasherEngine:
                 length = snd.get_length()
                 self._add_xp(1)
                 self.root.after(int(length * 1000) + 500, self.ducker.unduck)
-            except:
+            except pygame.error as e:
+                logger.debug(f"Could not play subliminal audio: {e}")
                 self.ducker.unduck()
             self.root.after(300, lambda: self._show_subliminal_visuals(text_content))
         else:
@@ -623,8 +659,8 @@ class FlasherEngine:
             try:
                 hwnd = windll.user32.GetParent(win.winfo_id())
                 windll.user32.SetWindowLongW(hwnd, -20, 0x08000000 | 0x00000008)
-            except:
-                pass
+            except (OSError, AttributeError) as e:
+                logger.debug(f"Could not set window style: {e}")
             canvas = tk.Canvas(win, bg=final_bg, width=m['width'], height=m['height'], highlightthickness=0)
             canvas.pack(fill="both", expand=True)
             cx, cy = m['width'] // 2, m['height'] // 2
@@ -661,11 +697,11 @@ class FlasherEngine:
         monitors = []
         if SCREENINFO_AVAILABLE:
             try:
-                raw = get_monitors();
+                raw = get_monitors()
                 monitors = [{'x': m.x, 'y': m.y, 'width': m.width, 'height': m.height, 'is_primary': m.is_primary} for m
                             in raw]
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not get monitors: {e}")
         if not monitors: monitors = [
             {'x': 0, 'y': 0, 'width': self.root.winfo_screenwidth(), 'height': self.root.winfo_screenheight(),
              'is_primary': True}]
@@ -680,8 +716,8 @@ class FlasherEngine:
     def _apply_window_lock(self, win, is_strict):
         try:
             win.attributes("-toolwindow", 1)
-        except:
-            pass
+        except tk.TclError as e:
+            logger.debug(f"Could not set toolwindow: {e}")
         if is_strict:
             win.protocol("WM_DELETE_WINDOW", lambda: None)
             win.bind('<Alt-F4>', lambda e: "break")
@@ -693,8 +729,8 @@ class FlasherEngine:
             try:
                 hwnd = windll.user32.GetParent(win.winfo_id())
                 windll.user32.SetWindowLongW(hwnd, -20, 0x08000000 | 0x00000008)
-            except:
-                pass
+            except (OSError, AttributeError) as e:
+                logger.debug(f"Could not set window style: {e}")
 
     def _prep_startle_video(self, video_path, is_strict):
         audio_path = self.extract_audio_from_video(video_path)
@@ -792,15 +828,15 @@ class FlasherEngine:
         if getattr(self, 'current_spot_strict', False) and self.video_windows:
             try:
                 self.video_windows[0]['win'].focus_force()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window may be destroyed
 
         if self.active_floating_texts:
             for t in self.active_floating_texts:
                 try:
                     t.lift()
-                except:
-                    pass
+                except tk.TclError:
+                    pass  # Window may be destroyed
 
         elapsed = time.time() - self.video_start_time
         if elapsed > self.current_video_duration + 0.5: self._cleanup_video(); return
@@ -841,8 +877,8 @@ class FlasherEngine:
                     last_tk_img = tk_img
                 vw['lbl'].configure(image=tk_img)
                 vw['lbl'].image = tk_img
-            except:
-                pass
+            except (tk.TclError, cv2.error) as e:
+                logger.debug(f"Video frame error: {e}")
         self.root.after(15, self._video_loop)
 
     def _spawn_attention_target(self):
@@ -984,10 +1020,10 @@ class FlasherEngine:
             if self.strict_active:
                 self.strict_active = False
                 try:
-                    self.root.deiconify();
+                    self.root.deiconify()
                     self.root.lift()
-                except:
-                    pass
+                except tk.TclError as e:
+                    logger.debug(f"Could not restore window: {e}")
             if self.settings.get('startle_enabled'): self.schedule_next("startle")
             if self.settings.get('subliminal_enabled'): self.schedule_next("subliminal")
             if self.events_pending_reschedule:
@@ -1001,10 +1037,10 @@ class FlasherEngine:
         if self.settings.get('startle_strict', False):
             self.strict_active = True
             try:
-                self.root.withdraw();
+                self.root.withdraw()
                 self.root.update()
-            except:
-                pass
+            except tk.TclError as e:
+                logger.debug(f"Could not withdraw window: {e}")
         monitors = self._get_monitors_safe()
         penalty_wins = []
         if is_troll:
@@ -1103,7 +1139,8 @@ class FlasherEngine:
             payload = {"processed_data": processed_data, "sec_data": None, "sound_path": sound_path,
                        "is_multiplication": is_multiplication}
             self.root.after(0, lambda: self._finalize_show_images(payload))
-        except:
+        except Exception as e:
+            logger.warning(f"Background loader error: {e}")
             if not is_multiplication: self.root.after(0, lambda: self.busy.__setattr__('busy', False))
 
     def _load_raw_frames(self, path):
@@ -1115,8 +1152,8 @@ class FlasherEngine:
                 meta = iio.immeta(path)
                 duration = meta.get('duration', 0)
                 if duration > 0: delay = duration / 1000.0; delay = max(delay, 0.04)
-            except:
-                pass
+            except (KeyError, TypeError):
+                pass  # No duration metadata
             raw_frames = []
             for i, frame in enumerate(frames_iter):
                 if i > 60: break
@@ -1124,11 +1161,12 @@ class FlasherEngine:
             step = 1
             if len(raw_frames) > 60: step = len(raw_frames) // 60; delay *= step
             for i in range(0, len(raw_frames), step): pil_images.append(Image.fromarray(raw_frames[i]))
-        except:
+        except Exception as e:
+            logger.debug(f"Could not load animated frames: {e}")
             try:
                 pil_images.append(Image.open(path))
-            except:
-                pass
+            except (IOError, OSError) as e:
+                logger.debug(f"Could not load image: {e}")
         return pil_images, delay
 
     def _finalize_show_images(self, data):
@@ -1212,7 +1250,8 @@ class FlasherEngine:
                 effect.play()
                 duration = effect.get_length()
                 self.root.after(int(duration * 1000) + 1500, self.ducker.unduck)
-            except:
+            except pygame.error as e:
+                logger.debug(f"Could not play delayed audio: {e}")
                 self.root.after(0, self.ducker.unduck)
 
     def _spawn_window_final(self, x, y, w, h, tk_frames, delay, is_startle, is_secondary):
@@ -1332,17 +1371,17 @@ class FlasherEngine:
                 # Update all progression visuals
                 self.progression.update_visuals(pink_opacity=pink_op)
             except Exception as e:
-                pass
+                logger.debug(f"Could not update progression visuals: {e}")
         else:
             try:
                 self.progression.shutdown()
-            except:
-                pass
+            except AttributeError:
+                pass  # Progression not initialized
 
         try:
             self._update_scheduler_progress()
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not update scheduler: {e}")
 
         if self.video_running:
             self.root.after(100, self.heartbeat)
@@ -1359,8 +1398,10 @@ class FlasherEngine:
             from progression_system import resource_mgr
             current_flash_count = len([w for w in self.active_windows if not getattr(w, 'is_locked_spot', False)])
             resource_mgr.active_effects['flashes'] = current_flash_count
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except (KeyError, AttributeError) as e:
+            logger.debug(f"Could not sync flash count: {e}")
 
         if not show_images and not self.active_windows:
             self.active_rects.clear()
@@ -1386,13 +1427,13 @@ class FlasherEngine:
                         win.destroy()
                         self.active_windows.remove(win)
                         self.active_rects = [r for r in self.active_rects if r['win'] != win]
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window may be destroyed
             if hasattr(win, 'frames') and len(win.frames) > 1:
                 now = time.time()
                 idx = int((now - win.start_time) / win.frame_delay) % len(win.frames)
                 try:
                     win.winfo_children()[0].configure(image=win.frames[idx])
-                except:
-                    pass
+                except (tk.TclError, IndexError):
+                    pass  # Window or frame may be gone
         self.root.after(33, self.heartbeat)

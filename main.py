@@ -29,7 +29,7 @@ os.chdir(APP_DIR)
 def check_dependencies() -> list:
     """
     Check if all required dependencies are installed.
-
+    
     Returns:
         List of missing module names
     """
@@ -39,29 +39,29 @@ def check_dependencies() -> list:
         ('pygame', 'pygame'),
         ('cv2', 'opencv-python'),
     ]
-
+    
     optional = [
         ('pystray', 'pystray'),
         ('pycaw', 'pycaw'),
         ('screeninfo', 'screeninfo'),
         ('selenium', 'selenium'),
     ]
-
+    
     missing = []
-
+    
     for module_name, pip_name in required:
         try:
             __import__(module_name)
         except ImportError:
             missing.append(pip_name)
-
+    
     # Just warn about optional dependencies
     for module_name, pip_name in optional:
         try:
             __import__(module_name)
         except ImportError:
             print(f"Optional: {pip_name} not installed (some features may be unavailable)")
-
+    
     return missing
 
 
@@ -84,7 +84,7 @@ def verify_assets_folder():
     """Verify assets folder exists and create if needed."""
     assets_dir = os.path.join(APP_DIR, "assets")
     subdirs = ["images", "sounds", "startle_videos", "sub_audio", "backgrounds"]
-
+    
     if not os.path.exists(assets_dir):
         try:
             os.makedirs(assets_dir)
@@ -92,7 +92,7 @@ def verify_assets_folder():
         except OSError as e:
             print(f"Warning: Could not create assets folder: {e}")
             return False
-
+    
     for subdir in subdirs:
         subdir_path = os.path.join(assets_dir, subdir)
         if not os.path.exists(subdir_path):
@@ -100,13 +100,13 @@ def verify_assets_folder():
                 os.makedirs(subdir_path)
             except OSError:
                 pass  # Non-critical
-
+    
     return True
 
 
 def main():
     """Main entry point with proper error handling."""
-
+    
     # Step 1: Check dependencies
     missing = check_dependencies()
     if missing:
@@ -114,7 +114,7 @@ def main():
         msg += "Please run:\npip install " + " ".join(missing)
         show_error_dialog("Missing Dependencies", msg)
         sys.exit(1)
-
+    
     # Step 2: Initialize logging
     try:
         from security import setup_logging, logger
@@ -131,10 +131,10 @@ def main():
         import logging
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger("ConditioningPanel")
-
+    
     # Step 3: Verify assets folder
     verify_assets_folder()
-
+    
     # Step 4: Check for single instance
     try:
         from utils import SingleInstanceChecker
@@ -151,29 +151,29 @@ def main():
         logger.warning("SingleInstanceChecker not available")
     except Exception as e:
         logger.warning(f"Could not check for single instance: {e}")
-
+    
     # Step 5: Initialize and run GUI
     try:
         import customtkinter as ctk
         from gui import ControlPanel
-
+        
         logger.info("Initializing GUI...")
-
+        
         # Set appearance
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
-
+        
         # Create main window
         root = ctk.CTk()
-
+        
         # Initialize application
         app = ControlPanel(root)
-
+        
         logger.info("Starting main loop...")
         root.mainloop()
-
+        
         logger.info("Application closed normally")
-
+        
     except ImportError as e:
         error_msg = f"Failed to import required module: {e}\n\n"
         error_msg += "Please ensure all dependencies are installed:\n"
@@ -181,7 +181,7 @@ def main():
         logger.error(error_msg)
         show_error_dialog("Import Error", error_msg)
         sys.exit(1)
-
+        
     except Exception as e:
         error_msg = f"Unexpected error during startup:\n\n{e}\n\n"
         error_msg += "Check logs/app.log for details."
