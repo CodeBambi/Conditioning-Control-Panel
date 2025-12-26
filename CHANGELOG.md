@@ -1,5 +1,53 @@
 # Changelog - Conditioning Control Panel
 
+## Version 2.1.0 (Security Update) - 2025-01
+
+### 🔒 Security Overhaul
+- **NEW: security.py** - Centralized security module with:
+  - File-based logging with rotation (`logs/app.log`)
+  - Path validation and sanitization (prevents directory traversal)
+  - Settings validation schema
+  - Dangerous settings detection and warnings
+- **Exception Handling**: Fixed **91 bare `except:` clauses** across all modules
+  - All exceptions now catch specific types (e.g., `tk.TclError`, `pygame.error`)
+  - Better error context logged for debugging
+- **Input Validation**: Settings validated on load against schema
+- **Version System**: Added version constants and tracking
+
+### 📦 Build Improvements
+- **Updated build_app.py**:
+  - Version number in output filename
+  - Excludes unnecessary modules to reduce size
+  - Better asset filtering (removes .psd, .bak, etc.)
+  - Verbose mode support (`VERBOSE=1`)
+- **NEW: installer.iss** - Inno Setup script for professional Windows installer
+- **Cleaner exe name**: `ConditioningControlPanel.exe` (no spaces)
+
+### 🎨 Polish
+- Window title shows version number
+- Startup logging with version info
+- Dangerous settings logged on load
+
+### 🐛 Bug Fixes
+- Fixed `main.py` importing wrong class name (`ControlPanel` not `ConditioningApp`)
+
+---
+
+## Version 2.0.1 (Hotfix) - 2025-01
+
+### 🐛 Bug Fixes
+- **Volume Curve**: Changed from `vol²` to `vol^1.5` with 5% minimum
+  - 20% slider now produces audible volume (was silent before)
+  - Applied to: video audio, flash sounds, subliminal audio, bubble pops
+- **Welcome Dialog**: Now appears ON TOP of browser window
+  - Added `topmost` attribute and delayed lift
+  - Adjusted timing: welcome at 1500ms, auto-start at 2000ms
+- **Video Limit**: Reduced max videos per hour from 60 to 20
+  - Prevents excessive interruption
+- **Level-Up Sound**: Added `assets/sounds/lvup.mp3` requirement
+
+---
+
 ## Version 2.0 (Major Refactor)
 
 ### 🏗️ Architecture Changes

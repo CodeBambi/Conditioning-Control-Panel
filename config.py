@@ -12,6 +12,21 @@ import os
 import sys
 
 # =============================================================================
+# VERSION INFO
+# =============================================================================
+
+VERSION = "2.1.0"
+VERSION_NAME = "Security Update"
+BUILD_DATE = "2025-01"
+APP_NAME = "Conditioning Control Panel"
+APP_AUTHOR = "Anonymous"
+
+def get_version_string():
+    """Get formatted version string."""
+    return f"{APP_NAME} v{VERSION}"
+
+
+# =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
 

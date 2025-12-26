@@ -23,15 +23,18 @@ except ImportError:
 
 from config import (
     THEME, DEFAULT_SETTINGS, BAMBI_POOL_DICT, ASSETS_DIR, BASE_DIR,
-    SETTINGS_FILE, PRESETS_FILE, STARTUP_FILE_PATH
+    SETTINGS_FILE, PRESETS_FILE, STARTUP_FILE_PATH,
+    VERSION, APP_NAME, get_version_string
 )
 
 # Initialize logging
 try:
-    from security import logger
+    from security import logger, validate_settings, check_dangerous_settings
 except ImportError:
     import logging
     logger = logging.getLogger("ConditioningPanel")
+    def validate_settings(s): return s
+    def check_dangerous_settings(s): return []
 
 # Try to import SingleInstanceChecker, create dummy if not available
 try:
@@ -106,10 +109,12 @@ class ControlPanel:
     def __init__(self, root):
         self.root = root
         ctk.set_appearance_mode("Dark")
-        self.root.title("💗 Conditioning Dashboard")
+        self.root.title(f"💗 {APP_NAME} v{VERSION}")
         self.root.geometry("1100x900")  # Taller window
         self.root.configure(fg_color=M["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
+        
+        logger.info(f"Starting {get_version_string()}")
 
         # Icon
         self.icon_path = None
@@ -375,6 +380,15 @@ Enjoy the pink fog... 💕"""
                     m['subliminal_pool'] = BAMBI_POOL_DICT.copy()
                 if 'attention_pool' not in m:
                     m['attention_pool'] = BAMBI_POOL_DICT.copy()
+                
+                # Validate settings
+                m = validate_settings(m)
+                
+                # Check for dangerous settings and warn user
+                warnings = check_dangerous_settings(m)
+                if warnings:
+                    logger.warning(f"Dangerous settings detected: {warnings}")
+                
                 return m
             except (IOError, OSError, json.JSONDecodeError) as e:
                 logger.warning(f"Could not load settings: {e}")
