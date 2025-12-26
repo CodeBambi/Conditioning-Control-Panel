@@ -1,13 +1,13 @@
 """
-Build Script for Conditioning Control Panel
-============================================
+Build Script for Conditioning Control Panel (Fixed)
+===================================================
 Creates a distributable Windows executable using PyInstaller.
+- ENABLES error output for debugging
+- Handles OS-specific separators
+- Increases recursion limit for GUI libraries
 
 Usage:
     python build_app.py
-    
-Requirements:
-    pip install pyinstaller
 """
 
 import os
@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import platform
 
 # Import version from config
 try:
@@ -27,7 +28,7 @@ except ImportError:
 # --- CONFIGURATION ---
 MAIN_SCRIPT = "main.py"
 ASSETS_DIR = "assets"
-OUTPUT_NAME = "ConditioningControlPanel"  # No spaces for exe name
+OUTPUT_NAME = "ConditioningControlPanel"
 
 # Try to find the icon
 ICON_FILE = None
@@ -46,23 +47,14 @@ INCLUDE_FILES = [
 
 # Exclude these from assets to reduce size
 EXCLUDE_PATTERNS = [
-    "*.psd",
-    "*.ai",
-    "*.sketch",
-    "Thumbs.db",
-    ".DS_Store",
-    "*.bak",
-    "*.tmp",
+    "*.psd", "*.ai", "*.sketch", "Thumbs.db", ".DS_Store", "*.bak", "*.tmp",
 ]
-
 
 def print_step(msg):
     print(f"\n{'=' * 60}\n[BUILD] {msg}\n{'=' * 60}")
 
-
 def print_info(msg):
     print(f"  → {msg}")
-
 
 def clean_previous_builds():
     """Removes old build/dist folders to ensure a fresh start."""
@@ -70,8 +62,11 @@ def clean_previous_builds():
     folders = ['build', 'dist', '__pycache__']
     for folder in folders:
         if os.path.exists(folder):
-            print_info(f"Removing {folder}/")
-            shutil.rmtree(folder)
+            try:
+                shutil.rmtree(folder)
+                print_info(f"Removed {folder}/")
+            except OSError as e:
+                print_info(f"Could not remove {folder}: {e}")
 
     # Remove spec files
     for spec in [f"{APP_NAME}.spec", f"{OUTPUT_NAME}.spec"]:
@@ -82,227 +77,176 @@ def clean_previous_builds():
     for old_file in os.listdir('.'):
         if old_file.endswith('_Release.zip') or old_file.endswith('_Setup.exe'):
             os.remove(old_file)
-            print_info(f"Removed old {old_file}")
 
+def check_requirements():
+    """Checks if critical packages are installed before starting."""
+    required = ["PyInstaller", "customtkinter", "PIL", "cv2"]
+    missing = []
+    import importlib.util
+
+    # Map pip names to import names where they differ
+    mapping = {"PIL": "PIL", "cv2": "cv2"}
+
+    for pkg in required:
+        import_name = mapping.get(pkg, pkg)
+        if importlib.util.find_spec(import_name) is None:
+            # Special check for cv2 which is 'opencv-python' in pip
+            if pkg == "cv2":
+                try:
+                    import cv2
+                except ImportError:
+                    missing.append(pkg)
+            else:
+                missing.append(pkg)
+
+    if missing:
+        print("\n[CRITICAL ERROR] Missing required packages for build:")
+        print(f"  {', '.join(missing)}")
+        print("Please run: pip install " + " ".join(missing))
+        sys.exit(1)
 
 def run_pyinstaller():
     """Runs the PyInstaller command to freeze the Python code."""
     print_step(f"Compiling v{VERSION} with PyInstaller...")
 
+    # Detect OS separator (Windows uses ';', Mac/Linux uses ':')
+    sep = ';' if os.name == 'nt' else ':'
+
     # Hidden imports for modules loaded dynamically
     hidden_imports = [
-        # System tray and audio
-        "pystray", "pystray._win32",
-        "pycaw", "pycaw.pycaw",
-        "comtypes", "comtypes.client",
-        
-        # Display
-        "screeninfo",
-        
-        # Image processing
+        "pystray", "pystray._win32", "pycaw", "pycaw.pycaw",
+        "comtypes", "comtypes.client", "screeninfo",
         "PIL", "PIL._tkinter_finder", "PIL.Image", "PIL.ImageTk",
-        
-        # Video/Media
-        "cv2", "imageio", "imageio_ffmpeg",
-        
-        # UI
-        "customtkinter", "darkdetect",
-        
-        # Selenium (browser)
-        "selenium", "selenium.webdriver",
-        
-        # Our modules
+        "cv2", "numpy", "numpy.core._methods", "numpy.lib.format",  # cv2 requires numpy
+        "imageio", "imageio_ffmpeg",
+        "customtkinter", "darkdetect", "selenium", "selenium.webdriver",
+        # Local modules
         "engine", "gui", "utils", "config", "security",
-        "browser", "ui_components", "progression_system", 
+        "browser", "ui_components", "progression_system",
         "bubble_game", "Overlay_spiral", "main",
     ]
-    
-    # Exclude unnecessary modules to reduce size
+
+    # NOTE: Do NOT exclude numpy - opencv-python requires it!
     excludes = [
-        "matplotlib", "numpy.testing", "scipy",
-        "pandas", "notebook", "IPython",
-        "pytest", "unittest", "doctest",
-        "tkinter.test", "lib2to3",
+        "matplotlib", "scipy", "pandas", "notebook",
+        "IPython", "pytest", "unittest", "doctest", "tkinter.test"
     ]
 
     cmd = [
         "pyinstaller",
-        "--noconsole",        # No console window
-        "--onedir",           # Folder output (faster startup than onefile)
-        "--clean",            # Clean cache
-        "--noconfirm",        # Overwrite without asking
+        "--noconsole",
+        "--onedir",
+        "--clean",
+        "--noconfirm",
         f"--name={OUTPUT_NAME}",
-        
-        # Version info (Windows)
-        f"--add-data=config.py;.",
-        
-        # Collect required packages
+        # FIX: Use dynamic separator for cross-platform compatibility
+        f"--add-data=config.py{sep}.",
         "--collect-all=customtkinter",
         "--collect-all=darkdetect",
         "--collect-all=PIL",
-        
-        # Imageio metadata
+        "--collect-all=cv2",  # FIX: Collect all cv2 binaries
         "--copy-metadata=imageio",
         "--copy-metadata=imageio_ffmpeg",
+        # FIX: Increase recursion limit for GUI libraries
+        "--additional-hooks-dir=.",
     ]
 
-    # Add icon if found
     if ICON_FILE:
         cmd.append(f"--icon={ICON_FILE}")
-        print_info(f"Using icon: {ICON_FILE}")
-    else:
-        print_info("No icon found, using default")
 
-    # Add hidden imports
     for lib in hidden_imports:
         cmd.append(f"--hidden-import={lib}")
-    
-    # Add excludes
+
     for exc in excludes:
         cmd.append(f"--exclude-module={exc}")
 
-    # Main script last
     cmd.append(MAIN_SCRIPT)
 
-    print_info(f"Running PyInstaller...")
-    
-    try:
-        subprocess.check_call(cmd, stdout=subprocess.DEVNULL if not os.getenv('VERBOSE') else None)
-    except subprocess.CalledProcessError as e:
-        print(f"\n[ERROR] PyInstaller failed with code {e.returncode}")
-        print("Try running with VERBOSE=1 for more details")
-        sys.exit(1)
-    except FileNotFoundError:
-        print("\n[ERROR] PyInstaller not found. Install it with:")
-        print("  pip install pyinstaller")
-        sys.exit(1)
+    print_info("Executing PyInstaller (Output Enabled)...")
+    print("-" * 60)
 
+    try:
+        # FIX: Removed stdout=subprocess.DEVNULL to show errors
+        subprocess.check_call(cmd)
+        print("-" * 60)
+    except subprocess.CalledProcessError as e:
+        print("-" * 60)
+        print(f"\n[ERROR] PyInstaller failed with return code {e.returncode}.")
+        print("Read the error message above to fix the issue.")
+        sys.exit(1)
 
 def copy_assets():
     """Copies the assets folder into the dist folder."""
     print_step("Copying Assets...")
-
     dist_folder = os.path.join("dist", OUTPUT_NAME)
     target_assets = os.path.join(dist_folder, ASSETS_DIR)
 
     if not os.path.exists(ASSETS_DIR):
-        print_info("[WARNING] No assets folder found!")
+        print_info("[WARNING] No assets folder found in source!")
         os.makedirs(target_assets, exist_ok=True)
         return
 
     if os.path.exists(target_assets):
         shutil.rmtree(target_assets)
 
-    # Copy with filtering
     def ignore_patterns(dir, files):
         ignored = []
         for f in files:
             for pattern in EXCLUDE_PATTERNS:
-                if pattern.startswith('*'):
-                    if f.endswith(pattern[1:]):
-                        ignored.append(f)
+                if pattern.startswith('*') and f.endswith(pattern[1:]):
+                    ignored.append(f)
                 elif f == pattern:
                     ignored.append(f)
         return ignored
 
     shutil.copytree(ASSETS_DIR, target_assets, ignore=ignore_patterns)
-    
-    # Count files
-    file_count = sum(len(files) for _, _, files in os.walk(target_assets))
-    print_info(f"Copied {file_count} asset files")
-
+    print_info("Assets copied successfully.")
 
 def copy_documentation():
     """Copies documentation to the dist folder."""
     print_step("Copying Documentation...")
-    
     dist_folder = os.path.join("dist", OUTPUT_NAME)
-    
-    copied = 0
     for filename in INCLUDE_FILES:
         if os.path.exists(filename):
             shutil.copy2(filename, os.path.join(dist_folder, filename))
-            copied += 1
-    
-    print_info(f"Copied {copied} documentation files")
-
 
 def create_version_file():
     """Creates a VERSION.txt file in the dist."""
-    print_step("Creating version info...")
-    
     dist_folder = os.path.join("dist", OUTPUT_NAME)
-    version_file = os.path.join(dist_folder, "VERSION.txt")
-    
-    with open(version_file, 'w') as f:
-        f.write(f"{APP_NAME}\n")
-        f.write(f"Version: {VERSION}\n")
-        f.write(f"Built: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
-    print_info(f"Version: {VERSION}")
+    if not os.path.exists(dist_folder): return
 
-
-def calculate_size():
-    """Calculate the total size of the dist folder."""
-    dist_folder = os.path.join("dist", OUTPUT_NAME)
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(dist_folder):
-        for f in filenames:
-            fp = os.path.join(dirpath, f)
-            total_size += os.path.getsize(fp)
-    return total_size
-
+    with open(os.path.join(dist_folder, "VERSION.txt"), 'w') as f:
+        f.write(f"{APP_NAME}\nVersion: {VERSION}\nBuilt: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 def zip_package():
     """Zips the final result."""
     print_step("Creating Release Package...")
-
     output_filename = f"{OUTPUT_NAME}_v{VERSION}"
     shutil.make_archive(output_filename, 'zip', root_dir='dist', base_dir=OUTPUT_NAME)
-    
-    zip_path = f"{output_filename}.zip"
-    zip_size = os.path.getsize(zip_path) / (1024 * 1024)
-    
-    print_info(f"Created: {zip_path} ({zip_size:.1f} MB)")
-    return zip_path
-
+    print_info(f"Created: {output_filename}.zip")
+    return f"{output_filename}.zip"
 
 def main():
-    """Main build process."""
     print(f"\n🎀 Building {APP_NAME} v{VERSION} 🎀\n")
-    
     start_time = time.time()
 
-    # Run build steps
+    check_requirements()
     clean_previous_builds()
     run_pyinstaller()
     copy_assets()
     copy_documentation()
     create_version_file()
-    
-    # Calculate size before zipping
-    dist_size = calculate_size() / (1024 * 1024)
-    print_info(f"Distribution size: {dist_size:.1f} MB")
-    
+
     zip_file = zip_package()
 
-    elapsed = round(time.time() - start_time, 1)
-    
-    print_step(f"BUILD COMPLETE! ({elapsed}s)")
-    print(f"""
-📦 Output Files:
-   • Folder: dist/{OUTPUT_NAME}/
-   • Zip:    {zip_file}
-
-📋 Next Steps:
-   1. Test the exe: dist/{OUTPUT_NAME}/{OUTPUT_NAME}.exe
-   2. If working, upload {zip_file} to GitHub Releases
-   3. Optional: Build installer with Inno Setup using installer.iss
-
-🎀 Ready for distribution! 🎀
-""")
-
+    print_step(f"BUILD COMPLETE ({round(time.time() - start_time, 1)}s)")
+    print(f"Output: dist/{OUTPUT_NAME}/{OUTPUT_NAME}.exe")
+    print(f"Zip:    {zip_file}")
 
 if __name__ == "__main__":
-    main()
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[!] Build cancelled by user.")
+    except Exception as e:
+        print(f"\n[FATAL ERROR] {e}")

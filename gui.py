@@ -110,7 +110,7 @@ class ControlPanel:
         self.root = root
         ctk.set_appearance_mode("Dark")
         self.root.title(f"💗 {APP_NAME} v{VERSION}")
-        self.root.geometry("1100x900")  # Taller window
+        self.root.geometry("1100x820")  # Taller window
         self.root.configure(fg_color=M["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
         
@@ -182,7 +182,7 @@ class ControlPanel:
         """Show a welcome dialog for new users"""
         welcome_win = ctk.CTkToplevel(self.root)
         welcome_win.title("🎀 Welcome to Conditioning Control Panel!")
-        welcome_win.geometry("500x420")
+        welcome_win.geometry("500x600")
         welcome_win.resizable(False, False)
         welcome_win.transient(self.root)
         welcome_win.grab_set()
@@ -197,7 +197,7 @@ class ControlPanel:
         welcome_win.update_idletasks()
         x = (welcome_win.winfo_screenwidth() - 500) // 2
         y = (welcome_win.winfo_screenheight() - 420) // 2
-        welcome_win.geometry(f"500x420+{x}+{y}")
+        welcome_win.geometry(f"500x600+{x}+{y}")
         
         # Keep on top after geometry change
         welcome_win.after(100, lambda: welcome_win.attributes('-topmost', True))
