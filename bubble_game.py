@@ -14,11 +14,19 @@ import threading
 import tkinter as tk
 from ctypes import windll, byref, c_int
 
+# Initialize logging
+try:
+    from security import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger("ConditioningPanel")
+
 try:
     import pygame
     pygame.mixer.init()
     AUDIO_AVAILABLE = True
-except:
+except (ImportError, pygame.error) as e:
+    logger.info(f"Pygame audio not available: {e}")
     AUDIO_AVAILABLE = False
 
 from PIL import Image, ImageDraw
@@ -27,7 +35,7 @@ from PIL import Image, ImageDraw
 try:
     from progression_system import resource_mgr
     RESOURCE_MGR_AVAILABLE = True
-except:
+except ImportError:
     RESOURCE_MGR_AVAILABLE = False
 
 # Win32 constants
@@ -84,7 +92,7 @@ def make_transparent_window(hwnd, pil_image, x, y, alpha_val=255):
 
         try:
             pil_image = pil_image.convert('RGBa')
-        except:
+        except (ValueError, OSError):
             pil_image = pil_image.convert('RGBA').convert('RGBa')
 
         w, h = pil_image.size
@@ -121,8 +129,8 @@ def make_transparent_window(hwnd, pil_image, x, y, alpha_val=255):
         windll.gdi32.DeleteObject(hBitmap)
         windll.gdi32.DeleteDC(hdcMem)
         windll.user32.ReleaseDC(0, hdcScreen)
-    except:
-        pass
+    except (OSError, AttributeError) as e:
+        logger.debug(f"Layered window update failed: {e}")
 
 
 class Bubble:
@@ -136,8 +144,8 @@ class Bubble:
             if on_miss:
                 try:
                     on_miss()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"on_miss callback failed: {e}")
             return
 
         Bubble.count += 1
@@ -147,8 +155,8 @@ class Bubble:
         if RESOURCE_MGR_AVAILABLE:
             try:
                 resource_mgr.register_effect('bubble', True)
-            except:
-                pass
+            except (AttributeError, KeyError) as e:
+                logger.debug(f"Could not register bubble: {e}")
         
         self.root = root
         self.on_pop = on_pop
@@ -185,7 +193,8 @@ class Bubble:
                     new_w = self.target_size
                     new_h = int(new_w / aspect)
                     self.original_pil = self.original_pil.resize((new_w, new_h), Image.Resampling.BILINEAR)
-            except:
+            except (OSError, ValueError) as e:
+                logger.debug(f"Could not use preloaded image: {e}")
                 self.original_pil = None
 
         # Fallback to loading from file
@@ -198,7 +207,8 @@ class Bubble:
                     new_w = self.target_size
                     new_h = int(new_w / aspect)
                     self.original_pil = self.original_pil.resize((new_w, new_h), Image.Resampling.BILINEAR)
-            except:
+            except (IOError, OSError, ValueError) as e:
+                logger.debug(f"Could not load bubble image: {e}")
                 self.original_pil = None
 
         # Create fallback bubble if no image
@@ -236,7 +246,8 @@ class Bubble:
             offset_y = (self.canvas_size - new_h) // 2
             canvas.paste(resized, (offset_x, offset_y), resized)
             return canvas
-        except:
+        except (OSError, ValueError) as e:
+            logger.debug(f"Could not render bubble frame: {e}")
             return None
 
     def _create_window(self):
@@ -365,8 +376,8 @@ class Bubble:
                 if resource_mgr.is_video_active():
                     self.pop()
                     return
-            except:
-                pass
+            except (AttributeError, KeyError):
+                pass  # Resource manager not properly initialized
 
         if self.is_popping:
             self.scale_base += 0.06
@@ -396,7 +407,8 @@ class Bubble:
                 # Update hitbox alpha during pop
                 if self.is_popping:
                     self.hitbox_win.attributes('-alpha', max(0.01, self.fade_alpha / 255 * 0.01))
-        except:
+        except (tk.TclError, OSError) as e:
+            logger.debug(f"Bubble animate failed: {e}")
             self.destroy()
             return
 
@@ -433,8 +445,8 @@ class Bubble:
                     sound = pygame.mixer.Sound(gg_path)
                     sound.set_volume(vol)
                     sound.play()
-        except:
-            pass
+        except pygame.error as e:
+            logger.debug(f"Could not play bubble sound: {e}")
 
     def pop(self, event=None):
         if not self.alive or self.is_popping:
@@ -444,15 +456,15 @@ class Bubble:
         if self.on_pop:
             try:
                 self.on_pop()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"on_pop callback failed: {e}")
 
     def miss(self):
         if self.on_miss:
             try:
                 self.on_miss()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"on_miss callback failed: {e}")
         self.destroy()
 
     def destroy(self):
@@ -460,32 +472,32 @@ class Bubble:
             return
         self.alive = False
         Bubble.count = max(0, Bubble.count - 1)
-
+        
         # Remove from instances list
         if self in Bubble.instances:
             Bubble.instances.remove(self)
-
+        
         # Unregister from resource manager
         if RESOURCE_MGR_AVAILABLE:
             try:
                 resource_mgr.register_effect('bubble', False)
-            except:
-                pass
-
+            except (AttributeError, KeyError) as e:
+                logger.debug(f"Could not unregister bubble: {e}")
+        
         # Destroy hitbox window
         if self.hitbox_win:
             try:
                 self.hitbox_win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
             self.hitbox_win = None
-
+        
         # Destroy visual window
         if self.win:
             try:
                 self.win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
             self.win = None
         self.hwnd = None
         self.original_pil = None
@@ -502,8 +514,8 @@ class Bubble:
                     if bubble.on_pop:
                         try:
                             bubble.on_pop()
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"on_pop callback failed during pop_all: {e}")
                 # Force immediate destroy
                 bubble.alive = False
                 try:
@@ -511,16 +523,16 @@ class Bubble:
                         bubble.hitbox_win.destroy()
                     if bubble.win:
                         bubble.win.destroy()
-                except:
-                    pass
-
+                except tk.TclError:
+                    pass  # Already destroyed
+        
         # Clear tracking
         cls.instances.clear()
         cls.count = 0
-
+        
         # Reset resource manager
         if RESOURCE_MGR_AVAILABLE:
             try:
                 resource_mgr.active_effects['bubbles'] = 0
-            except:
-                pass
+            except (AttributeError, KeyError) as e:
+                logger.debug(f"Could not reset bubble count: {e}")

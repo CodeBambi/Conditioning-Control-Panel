@@ -14,6 +14,13 @@ import ctypes
 from ctypes import windll
 from PIL import Image, ImageSequence, ImageTk
 
+# Initialize logging
+try:
+    from security import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger("ConditioningPanel")
+
 # --- WIN32 API CONSTANTS ---
 GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x80000
@@ -214,7 +221,8 @@ class SpiralOverlay:
                     primary = all_monitors[0]
                 if primary:
                     monitors.append({'x': primary.x, 'y': primary.y, 'width': primary.width, 'height': primary.height})
-        except:
+        except Exception as e:
+            logger.debug(f"Could not get monitors: {e}")
             monitors.append({
                 'x': 0, 'y': 0,
                 'width': self.root.winfo_screenwidth(),
@@ -341,8 +349,8 @@ class SpiralOverlay:
             
             windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW)
-        except:
-            pass
+        except (OSError, AttributeError) as e:
+            logger.debug(f"Could not make window click-through: {e}")
 
     def _animate(self):
         """Animate frames with rate limiting"""
@@ -371,8 +379,8 @@ class SpiralOverlay:
                     try:
                         label.configure(image=photo)
                         label.image = photo
-                    except:
-                        pass
+                    except tk.TclError:
+                        pass  # Label may be destroyed
                 
                 self.current_frame += 1
             
@@ -382,8 +390,8 @@ class SpiralOverlay:
             
             self.root.after(delay, self._animate)
             
-        except Exception as e:
-            pass
+        except tk.TclError as e:
+            logger.debug(f"Animation error: {e}")
 
     def set_alpha(self, alpha_val):
         """Update overlay transparency (0-255 -> 0.0-1.0)"""
@@ -391,8 +399,8 @@ class SpiralOverlay:
         for win in self.windows:
             try:
                 win.attributes('-alpha', self.alpha)
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window may be destroyed
 
     def pause(self):
         """Pause animation"""
@@ -413,8 +421,8 @@ class SpiralOverlay:
         for win in self.windows:
             try:
                 win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
         self.windows.clear()
         self.labels.clear()
         self._photo_frames = []
@@ -453,8 +461,8 @@ class PinkFilterOverlay:
         for win in self.windows:
             try:
                 win.attributes('-alpha', self.current_alpha)
-            except:
-                pass
+            except tk.TclError:
+                pass  # Window may be destroyed
 
     def _create_windows(self):
         """Create overlay windows"""
@@ -474,16 +482,16 @@ class PinkFilterOverlay:
                 win.update_idletasks()
                 self._make_click_through(win)
                 self.windows.append(win)
-            except:
-                pass
+            except tk.TclError as e:
+                logger.debug(f"Could not create pink filter window: {e}")
 
     def _destroy_windows(self):
         """Destroy all windows"""
         for win in self.windows:
             try:
                 win.destroy()
-            except:
-                pass
+            except tk.TclError:
+                pass  # Already destroyed
         self.windows.clear()
         self.active = False
         self.current_alpha = 0.0
@@ -502,15 +510,18 @@ class PinkFilterOverlay:
             
             windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW)
-        except:
-            pass
+        except (OSError, AttributeError) as e:
+            logger.debug(f"Could not make click-through: {e}")
 
     def _get_monitors(self):
         """Get monitors"""
         try:
             from screeninfo import get_monitors
             return [{'x': m.x, 'y': m.y, 'width': m.width, 'height': m.height} for m in get_monitors()]
-        except:
+        except ImportError:
+            return [{'x': 0, 'y': 0, 'width': self.root.winfo_screenwidth(), 'height': self.root.winfo_screenheight()}]
+        except Exception as e:
+            logger.debug(f"Could not get monitors: {e}")
             return [{'x': 0, 'y': 0, 'width': self.root.winfo_screenwidth(), 'height': self.root.winfo_screenheight()}]
 
 
@@ -535,8 +546,8 @@ class BubbleManager:
             if os.path.exists(path):
                 self._bubble_image = Image.open(path).convert('RGBA')
                 self._image_loaded = True
-        except:
-            pass
+        except (IOError, OSError) as e:
+            logger.debug(f"Could not preload bubble image: {e}")
 
     def update(self):
         if not self.engine.settings.get("bubbles_enabled", False):
@@ -651,8 +662,10 @@ class ProgressionSystem:
         try:
             from bubble_game import Bubble
             Bubble.pop_all()
-        except:
-            pass
+        except ImportError:
+            pass  # Module not available
+        except Exception as e:
+            logger.debug(f"Could not pop bubbles: {e}")
         
         # Hide pink filter
         self.pink_filter._destroy_windows()
@@ -664,8 +677,8 @@ class ProgressionSystem:
             for win in self.spiral.windows:
                 try:
                     win.withdraw()
-                except:
-                    pass
+                except tk.TclError:
+                    pass  # Window may be destroyed
             # Stop the animation loop
             self.spiral.running = False
 
@@ -685,8 +698,8 @@ class ProgressionSystem:
                 for win in self.spiral.windows:
                     try:
                         win.deiconify()
-                    except:
-                        pass
+                    except tk.TclError:
+                        pass  # Window may be destroyed
 
     def update_visuals(self, pink_opacity=0.0):
         """Update visual effects with rate limiting"""
